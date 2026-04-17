@@ -902,13 +902,21 @@ wss.on("connection", (ws) => {
 function handleWebSocketMessage(msg, ws) {
   switch (msg.type) {
     case "connect_device":
+      console.log(`🔗 CONNECT REQUEST: deviceIndex=${msg.deviceIndex}`);
+      const deviceToConnect = connectedDevices[msg.deviceIndex];
+      if (deviceToConnect) {
+        console.log(`   Device: ${deviceToConnect.displayName}`);
+      }
       if (swiftProcess && swiftProcess.stdin) {
+        console.log(`   → Sending to MuseBridge...`);
         swiftProcess.stdin.write(
           JSON.stringify({
             command: "connect",
             deviceIndex: msg.deviceIndex,
           }) + "\n",
         );
+      } else {
+        console.log(`   ❌ MuseBridge not available`);
       }
       break;
 
@@ -1124,6 +1132,30 @@ app.post("/api/connect", (req, res) => {
     res.json({ status: "connected", device: mac_address });
   } else {
     res.json({ status: "ok", info: "Use WebSocket for device connection" });
+  }
+});
+
+app.post("/api/start", (req, res) => {
+  // Legacy: OpenBCI start streaming command
+  // For Muse: MuseBridge auto-streams after device connects
+  res.json({
+    status: "streaming",
+    info: "MuseBridge streams automatically after connection",
+  });
+});
+
+app.post("/api/disconnect", (req, res) => {
+  // Legacy: OpenBCI disconnect command
+  // For Muse: Send WebSocket disconnect_device message
+  if (swiftProcess && swiftProcess.stdin) {
+    swiftProcess.stdin.write(
+      JSON.stringify({
+        command: "disconnect",
+      }) + "\n",
+    );
+    res.json({ status: "disconnected" });
+  } else {
+    res.json({ status: "ok" });
   }
 });
 
