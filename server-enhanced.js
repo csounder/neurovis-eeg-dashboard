@@ -384,6 +384,13 @@ function launchSwiftBridge() {
       try {
         const packet = JSON.parse(line);
 
+        // Log first of each packet type
+        if (!global._packetTypes) global._packetTypes = {};
+        if (!global._packetTypes[packet.type]) {
+          console.log(`📨 FIRST PACKET TYPE: "${packet.type}"`);
+          global._packetTypes[packet.type] = true;
+        }
+
         if (packet.type === "eeg") {
           handleEEGPacket(packet);
         } else if (packet.type === "bandPowers") {
@@ -398,6 +405,8 @@ function launchSwiftBridge() {
           handleGyroscopePacket(packet);
         } else if (packet.type === "ppg") {
           handlePPGPacket(packet);
+        } else if (packet.type === "fnirs") {
+          handleFNIRSPacket(packet);
         } else if (packet.type === "battery") {
           handleBatteryPacket(packet);
         }
@@ -687,6 +696,22 @@ function handleBatteryPacket(packet) {
   }
 }
 
+function handleFNIRSPacket(packet) {
+  // fNIRS: Functional Near-Infrared Spectroscopy (Muse S Athena only)
+  // Data format: [HbO2, HbR, HbTotal]
+  if (!packet.fnirs || packet.fnirs.length < 2) return;
+
+  packetCount++;
+
+  // Send via OSC if enabled
+  if (settings.oscStreams?.motionFNIRS) {
+    sendMotionOSC("/muse/fnirs", packet.fnirs);
+  }
+
+  // Broadcast to WebSocket/dashboard
+  broadcastMotionData("fnirs", packet.fnirs);
+}
+
 // ============================================================================
 // OSC Output
 // ============================================================================
@@ -901,6 +926,48 @@ wss.on("connection", (ws) => {
 
 function handleWebSocketMessage(msg, ws) {
   switch (msg.type) {
+    case "select_device":
+      // Frontend sends device NAME, we need to find the index
+      const deviceIndex = connectedDevices.findIndex(
+        (dev) => dev.name === msg.name,
+      );
+      if (deviceIndex >= 0) {
+        console.log(`✓ Found device at index ${deviceIndex}`);
+        const currentDeviceToSelect = connectedDevices[deviceIndex];
+        console.log(`🔗 Connecting to ${currentDeviceToSelect.displayName}`);
+        console.log(
+          `   ├─ EEG Channels: ${currentDeviceToSelect.specs.eegChannels} @ ${currentDeviceToSelect.specs.eegSampleRate}Hz`,
+        );
+        if (currentDeviceToSelect.specs.hasPPG) {
+          console.log(
+            `   ├─ PPG @ ${currentDeviceToSelect.specs.ppgSampleRate}Hz`,
+          );
+        }
+        if (currentDeviceToSelect.specs.hasMotion) {
+          console.log(
+            `   ├─ Motion @ ${currentDeviceToSelect.specs.motionSampleRate}Hz`,
+          );
+        }
+        if (currentDeviceToSelect.specs.hasfNIRS) {
+          console.log(
+            `   └─ fNIRS @ ${currentDeviceToSelect.specs.fnirsSampleRate}Hz`,
+          );
+        }
+
+        if (swiftProcess && swiftProcess.stdin) {
+          swiftProcess.stdin.write(
+            JSON.stringify({
+              command: "connect",
+              deviceIndex: deviceIndex,
+            }) + "\n",
+          );
+          console.log(`📡 Sent connect command to MuseBridge`);
+        }
+      } else {
+        console.error(`❌ Device not found: ${msg.name}`);
+      }
+      break;
+
     case "connect_device":
       console.log(`🔗 CONNECT REQUEST: deviceIndex=${msg.deviceIndex}`);
       const deviceToConnect = connectedDevices[msg.deviceIndex];
