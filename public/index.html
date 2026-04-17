@@ -1363,6 +1363,129 @@
                     "No devices found. Pair your headset in System Bluetooth first.",
                   ),
               ),
+            // OSC Settings
+            h(
+              "div",
+              {
+                style: {
+                  padding: "10px 14px",
+                  borderBottom: "1px solid " + th.bd,
+                  background: th.c2,
+                },
+              },
+              h(
+                "div",
+                {
+                  style: {
+                    fontSize: 9,
+                    fontWeight: 700,
+                    color: th.t2,
+                    textTransform: "uppercase",
+                    letterSpacing: ".05em",
+                    marginBottom: 8,
+                  },
+                },
+                "📡 OSC Prefix",
+              ),
+              h(
+                "div",
+                { style: { display: "flex", gap: 6, alignItems: "center" } },
+                h("input", {
+                  type: "text",
+                  placeholder: "/muse",
+                  defaultValue: "/muse",
+                  style: {
+                    flex: 1,
+                    padding: "6px 8px",
+                    borderRadius: 5,
+                    border: "1px solid " + th.bd,
+                    background: th.c1,
+                    color: th.tx,
+                    fontSize: 9,
+                    fontFamily: "'JetBrains Mono',monospace",
+                  },
+                  onKeyPress: function (e) {
+                    if (e.key === "Enter") {
+                      var input = e.target;
+                      var prefix = input.value.trim();
+                      if (prefix && prefix.startsWith("/")) {
+                        fetch("/api/osc/prefix", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ prefix: prefix }),
+                        })
+                          .then(function (r) {
+                            return r.json();
+                          })
+                          .then(function (j) {
+                            console.log(
+                              "[NeuroVis] OSC prefix set to:",
+                              prefix,
+                            );
+                            setConnErr("✓ OSC prefix: " + prefix);
+                          })
+                          .catch(function (e) {
+                            setConnErr("❌ Failed to set OSC prefix");
+                          });
+                      } else {
+                        setConnErr("❌ Prefix must start with /");
+                      }
+                    }
+                  },
+                }),
+                h(
+                  "button",
+                  {
+                    onClick: function () {
+                      var input = document.querySelector(
+                        "input[placeholder='/muse']",
+                      );
+                      if (input) {
+                        var prefix = input.value.trim();
+                        if (prefix && prefix.startsWith("/")) {
+                          fetch("/api/osc/prefix", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ prefix: prefix }),
+                          })
+                            .then(function (r) {
+                              return r.json();
+                            })
+                            .then(function (j) {
+                              console.log(
+                                "[NeuroVis] OSC prefix set to:",
+                                prefix,
+                              );
+                              setConnErr("✓ OSC prefix: " + prefix);
+                            })
+                            .catch(function (e) {
+                              setConnErr("❌ Failed to set OSC prefix");
+                            });
+                        } else {
+                          setConnErr("❌ Prefix must start with /");
+                        }
+                      }
+                    },
+                    style: {
+                      padding: "6px 12px",
+                      borderRadius: 5,
+                      border: "1px solid " + th.ac,
+                      background: th.ac + "12",
+                      color: th.ac,
+                      fontSize: 9,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    },
+                  },
+                  "Set",
+                ),
+              ),
+              h(
+                "div",
+                { style: { fontSize: 8, color: th.t3, marginTop: 6 } },
+                "e.g., /muse, /ganglion, /drC, /mysynth",
+              ),
+            ),
             // Actions
             h(
               "div",
