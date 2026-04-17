@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Muse EEG → Csound OSC Bridge - ENHANCED
- * Professional DSP pipeline with simulator, filters, and advanced controls
+ * NeuroVis EEG Dashboard — Brain Activity Visualization
+ * Real-time EEG from Muse (2/S/Athena) + OpenBCI with professional DSP & displays
  */
 
 const express = require("express");
@@ -1562,7 +1562,7 @@ app.get("/api/instruments/status", (req, res) => {
 
 function start() {
   console.log("═══════════════════════════════════════════════════════════");
-  console.log("🧠 Muse EEG Neuro Dashboard PRO - Enhanced");
+  console.log("🧠 NeuroVis EEG Dashboard — Muse + OpenBCI Support");
   console.log("═══════════════════════════════════════════════════════════\n");
 
   initOSC();
