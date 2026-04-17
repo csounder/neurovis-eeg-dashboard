@@ -1448,6 +1448,51 @@ app.post("/api/settings", (req, res) => {
   if (simulatorMode !== undefined) {
     settings.simulatorMode = simulatorMode;
     console.log(`🎲 Simulator mode: ${simulatorMode ? "ON" : "OFF"}`);
+
+    // Start or stop simulator interval
+    if (simulatorMode) {
+      if (!simulatorInterval) {
+        let simCount = 0;
+        let bandPowerCount = 0;
+        let motionCount = 0;
+        simulatorInterval = setInterval(() => {
+          const eeg = generateSimulatorData();
+          if (eeg) {
+            packetCount++;
+            simCount++;
+            const processed = dsp.process(eeg);
+            broadcastEEGData(eeg, processed);
+            if (simCount === 1)
+              console.log(
+                `📊 Simulator streaming: ${packetCount} total packets`,
+              );
+          }
+          bandPowerCount++;
+          if (bandPowerCount >= 26) {
+            const bandPowers = generateSimulatorBandPowers();
+            if (bandPowers) {
+              broadcastBandPowers(bandPowers.absolute, bandPowers.relative);
+            }
+            bandPowerCount = 0;
+          }
+          motionCount++;
+          if (motionCount >= 26) {
+            const accel = generateSimulatorMotion("accel");
+            const gyro = generateSimulatorMotion("gyro");
+            const ppg = generateSimulatorMotion("ppg");
+            if (accel) broadcastMotionData("accel", accel);
+            if (gyro) broadcastMotionData("gyro", gyro);
+            if (ppg) broadcastMotionData("ppg", ppg);
+            motionCount = 0;
+          }
+        }, 1000 / 256);
+      }
+    } else {
+      if (simulatorInterval) {
+        clearInterval(simulatorInterval);
+        simulatorInterval = null;
+      }
+    }
   }
 
   updateSettings(req.body);
