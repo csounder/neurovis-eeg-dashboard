@@ -805,61 +805,110 @@
           setConnErr("");
           var apiDev = DEV_API_MAP[p.dev] || "ganglion";
           var macAddr = "";
+          var deviceName = "";
           btDevs.forEach(function (bt) {
-            if (bt.device_type === apiDev) macAddr = bt.mac;
+            if (bt.device_type === apiDev) {
+              macAddr = bt.mac;
+              deviceName = bt.name;
+            }
           });
           var timeout = apiDev.indexOf("muse") >= 0 ? 30 : 15;
           console.log("[NeuroVis] Connecting:", {
             dev: p.dev,
             apiDev: apiDev,
+            deviceName: deviceName,
             mac: macAddr,
             timeout: timeout,
           });
-          fetch("/api/connect", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              device_type: apiDev,
-              serial_port: "",
-              mac_address: macAddr,
-              timeout: timeout,
-            }),
-          })
-            .then(function (r) {
-              return r.json();
-            })
-            .then(function (j) {
-              if (j.status === "ok") {
-                setHwConn(true);
-                setConnecting(false);
-                p.setPaired(p.dev);
-                window._nv_signal = true;
-                // Auto-start streaming
-                fetch("/api/start", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ buffer_size: 45000 }),
-                })
-                  .then(function (r2) {
-                    return r2.json();
-                  })
-                  .then(function (j2) {
-                    if (j2.status === "ok") {
-                      setStreaming(true);
-                      _startLivePoll();
-                      console.log("[NeuroVis] Auto-started streaming");
-                    }
-                  })
-                  .catch(function () {});
-              } else {
-                setConnecting(false);
-                setConnErr(j.message || "Connection failed");
-              }
-            })
-            .catch(function (e) {
+
+          // Send WebSocket select_device message to backend
+          if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+            console.log(
+              "[NeuroVis] Sending WebSocket select_device:",
+              deviceName,
+            );
+            window.ws.send(
+              JSON.stringify({
+                type: "select_device",
+                name: deviceName,
+              }),
+            );
+
+            // Give backend a moment to process, then mark as connected
+            setTimeout(function () {
+              setHwConn(true);
               setConnecting(false);
-              setConnErr("Backend error: " + e.message);
-            });
+              p.setPaired(p.dev);
+              window._nv_signal = true;
+              // Auto-start streaming
+              fetch("/api/start", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ buffer_size: 45000 }),
+              })
+                .then(function (r2) {
+                  return r2.json();
+                })
+                .then(function (j2) {
+                  if (j2.status === "ok") {
+                    setStreaming(true);
+                    _startLivePoll();
+                    console.log("[NeuroVis] Auto-started streaming");
+                  }
+                })
+                .catch(function () {});
+            }, 500);
+          } else {
+            // WebSocket not available, fall back to REST API
+            console.log(
+              "[NeuroVis] WebSocket not ready, falling back to REST API",
+            );
+            fetch("/api/connect", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                device_type: apiDev,
+                serial_port: "",
+                mac_address: macAddr,
+                timeout: timeout,
+              }),
+            })
+              .then(function (r) {
+                return r.json();
+              })
+              .then(function (j) {
+                if (j.status === "ok") {
+                  setHwConn(true);
+                  setConnecting(false);
+                  p.setPaired(p.dev);
+                  window._nv_signal = true;
+                  // Auto-start streaming
+                  fetch("/api/start", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ buffer_size: 45000 }),
+                  })
+                    .then(function (r2) {
+                      return r2.json();
+                    })
+                    .then(function (j2) {
+                      if (j2.status === "ok") {
+                        setStreaming(true);
+                        _startLivePoll();
+                        console.log("[NeuroVis] Auto-started streaming");
+                      }
+                    })
+                    .catch(function () {});
+                } else {
+                  setConnecting(false);
+                  setConnErr(j.message || "Connection failed");
+                }
+              })
+              .catch(function (e) {
+                setConnecting(false);
+                setConnErr("Backend error: " + e.message);
+              });
+          }
         }
         function doStart() {
           setStarting(true);
