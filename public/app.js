@@ -1606,21 +1606,30 @@ function handleMotionData(msg) {
     }
   }
 
-  // Update motion displays
+  // Update motion displays (if elements exist)
   if (sensor === "accel") {
-    document.getElementById("accelXValue").textContent = values[0].toFixed(2);
-    document.getElementById("accelYValue").textContent = values[1].toFixed(2);
-    document.getElementById("accelZValue").textContent = values[2].toFixed(2);
+    const accelX = document.getElementById("accelXValue");
+    const accelY = document.getElementById("accelYValue");
+    const accelZ = document.getElementById("accelZValue");
+    if (accelX) accelX.textContent = values[0].toFixed(2);
+    if (accelY) accelY.textContent = values[1].toFixed(2);
+    if (accelZ) accelZ.textContent = values[2].toFixed(2);
     updateMotionChart("accel", values);
   } else if (sensor === "gyro") {
-    document.getElementById("gyroXValue").textContent = values[0].toFixed(2);
-    document.getElementById("gyroYValue").textContent = values[1].toFixed(2);
-    document.getElementById("gyroZValue").textContent = values[2].toFixed(2);
+    const gyroX = document.getElementById("gyroXValue");
+    const gyroY = document.getElementById("gyroYValue");
+    const gyroZ = document.getElementById("gyroZValue");
+    if (gyroX) gyroX.textContent = values[0].toFixed(2);
+    if (gyroY) gyroY.textContent = values[1].toFixed(2);
+    if (gyroZ) gyroZ.textContent = values[2].toFixed(2);
     updateMotionChart("gyro", values);
   } else if (sensor === "ppg") {
-    document.getElementById("ppgRedValue").textContent = values[0].toFixed(0);
-    document.getElementById("ppgGreenValue").textContent = values[1].toFixed(0);
-    document.getElementById("ppgIRValue").textContent = values[2].toFixed(0);
+    const ppgRed = document.getElementById("ppgRedValue");
+    const ppgGreen = document.getElementById("ppgGreenValue");
+    const ppgIR = document.getElementById("ppgIRValue");
+    if (ppgRed) ppgRed.textContent = values[0].toFixed(0);
+    if (ppgGreen) ppgGreen.textContent = values[1].toFixed(0);
+    if (ppgIR) ppgIR.textContent = values[2].toFixed(0);
     updateMotionChart("ppg", values);
   }
 }
