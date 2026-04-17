@@ -1565,24 +1565,16 @@ function handleBandPowers(msg) {
   console.log("🎨 Active panels:", state.panelSelections);
   state.bandPowers = msg;
 
-  // Update band display bars
+  // Update band display bars (sidebar only)
   if (msg.relative) {
     const rel = msg.relative;
-    document.getElementById("band-delta").style.width = rel.delta * 100 + "%";
-    document.getElementById("band-theta").style.width = rel.theta * 100 + "%";
-    document.getElementById("band-alpha").style.width = rel.alpha * 100 + "%";
-    document.getElementById("band-beta").style.width = rel.beta * 100 + "%";
-    document.getElementById("band-gamma").style.width = rel.gamma * 100 + "%";
-
-    document.getElementById("band-delta-val").textContent =
-      rel.delta.toFixed(3);
-    document.getElementById("band-theta-val").textContent =
-      rel.theta.toFixed(3);
-    document.getElementById("band-alpha-val").textContent =
-      rel.alpha.toFixed(3);
-    document.getElementById("band-beta-val").textContent = rel.beta.toFixed(3);
-    document.getElementById("band-gamma-val").textContent =
-      rel.gamma.toFixed(3);
+    const bandNames = ["delta", "theta", "alpha", "beta", "gamma"];
+    bandNames.forEach((name) => {
+      const bar = document.getElementById(`band-${name}`);
+      const val = document.getElementById(`band-${name}-val`);
+      if (bar) bar.style.width = rel[name] * 100 + "%";
+      if (val) val.textContent = rel[name].toFixed(3);
+    });
   }
 
   // Update FFT chart with band powers
