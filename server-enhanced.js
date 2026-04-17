@@ -789,8 +789,15 @@ function sendBandPowersOSC(absolute, relative) {
 
       // Per-band addresses
       bands.forEach((band) => {
+        // Format 1: /muse/bands/absolute/alpha
         oscPort.send({
           address: `${settings.oscPrefix}/bands/absolute/${band}`,
+          args: [{ type: "f", value: absolute[band] || 0 }],
+        });
+
+        // Format 2: /muse/elements/{band}_absolute (alternative format)
+        oscPort.send({
+          address: `${settings.oscPrefix}/elements/${band}_absolute`,
           args: [{ type: "f", value: absolute[band] || 0 }],
         });
       });
@@ -808,8 +815,15 @@ function sendBandPowersOSC(absolute, relative) {
 
       // Per-band addresses (the main ones Csound/Max/TD/Unity listen to)
       bands.forEach((band) => {
+        // Format 1: /muse/bands/relative/alpha
         oscPort.send({
           address: `${settings.oscPrefix}/bands/relative/${band}`,
+          args: [{ type: "f", value: relative[band] || 0 }],
+        });
+
+        // Format 2: /muse/elements/{band}_relative (alternative format)
+        oscPort.send({
+          address: `${settings.oscPrefix}/elements/${band}_relative`,
           args: [{ type: "f", value: relative[band] || 0 }],
         });
       });
