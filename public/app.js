@@ -23,6 +23,12 @@ const nvState = {
   quadPPGHist: [[], [], []],
 };
 
+// Selector state for visualization filtering
+const selectorState = {
+  selectedBand: "delta", // Which band to display in filtered views
+  selectedChannel: "TP9", // Which channel to highlight in FFT
+};
+
 // ── FFT Spectrum + Power Bands (NeuroVis-style) ──
 function updateFFTSpectrumCanvas() {
   const canvasId =
@@ -2010,6 +2016,57 @@ function setupEventListeners() {
     .getElementById("exportJsonBtn")
     .addEventListener("click", exportJSON);
   document.getElementById("exportCsvBtn").addEventListener("click", exportCSV);
+
+  // Band Selector Buttons (for visualization filtering)
+  initializeBandSelectors();
+}
+
+function initializeBandSelectors() {
+  // Wire band selector buttons in all tabs
+  const bandNames = ["delta", "theta", "alpha", "beta", "gamma"];
+  const bandLabels = {
+    delta: "δ Delta",
+    theta: "θ Theta",
+    alpha: "α Alpha",
+    beta: "β Beta",
+    gamma: "γ Gamma",
+  };
+
+  // Find all band selector buttons and add click handlers
+  document.querySelectorAll(".selector-btn[data-band]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const bandName = e.target.dataset.band;
+
+      // Update selector state
+      selectorState.selectedBand = bandName;
+
+      // Update active state: remove from all, add to clicked
+      e.target.parentElement
+        .querySelectorAll("[data-band]")
+        .forEach((b) => b.classList.remove("active"));
+      e.target.classList.add("active");
+
+      // Update visualization to show selected band
+      updateVisualizationForSelectedBand();
+
+      console.log(`🎨 Band selector: ${bandName}`);
+    });
+  });
+
+  // Set initial active band
+  const deltaBtn = document.querySelector(
+    ".selector-btn[data-band='delta'].active",
+  );
+  if (deltaBtn) {
+    selectorState.selectedBand = "delta";
+  }
+}
+
+function updateVisualizationForSelectedBand() {
+  // Trigger re-render of canvas visualizations
+  // This is called whenever a band selector button is clicked
+  updateFFTSpectrumCanvas();
+  updateWaterfallCanvas();
 }
 
 function updateDSPSetting(setting, value) {
