@@ -19,19 +19,35 @@
           <h1>🧠 Muse EEG Neuro Dashboard PRO</h1>
            <div class="header-right">
              <div style="display: flex; align-items: center; gap: 16px;">
-               <!-- Color Palette Selector -->
-               <div style="display: flex; align-items: center; gap: 8px;">
-                 <label style="font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;">🎨 Theme:</label>
-                 <select id="colorPaletteSelector" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace;">
-                   <option value="default">Default (NeuroVis)</option>
-                   <option value="dark">Dark (High Contrast)</option>
-                   <option value="warm">Warm (Sunset)</option>
-                   <option value="cool">Cool (Ocean)</option>
-                   <option value="solarized">Solarized</option>
-                 </select>
-               </div>
-               
-               <div class="status-indicators">
+                <!-- Color Palette Selector -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <label style="font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;">🎨 Theme:</label>
+                  <select id="colorPaletteSelector" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace;">
+                    <option value="default">Default (NeuroVis)</option>
+                    <option value="dark">Dark (High Contrast)</option>
+                    <option value="warm">Warm (Sunset)</option>
+                    <option value="cool">Cool (Ocean)</option>
+                    <option value="solarized">Solarized</option>
+                  </select>
+                </div>
+
+                <!-- Device Selector -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <label style="font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;">📱 Device:</label>
+                  <select id="headerDeviceSelector" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace;">
+                    <option value="">No Device</option>
+                  </select>
+                </div>
+
+                <!-- Simulator Toggle -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-secondary); cursor: pointer; white-space: nowrap;">
+                    <input type="checkbox" id="headerSimulatorToggle" style="width: 16px; height: 16px; cursor: pointer;" />
+                    🎲 Sim
+                  </label>
+                </div>
+                
+                <div class="status-indicators">
                  <div class="status" id="oscStatus">
                    <span class="dot"></span>
                    <span>OSC</span>

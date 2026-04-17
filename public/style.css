@@ -188,6 +188,12 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* Hide Device and Simulator sections from sidebar (now in header) */
+.sidebar-section:nth-child(1),
+.sidebar-section:nth-child(2) {
+  display: none;
+}
+
 .device-list {
   display: flex;
   flex-direction: column;
@@ -412,7 +418,7 @@ body {
 
 .tab-content {
   flex: 1;
-  overflow: hidden;
+  overflow: auto;
   padding: 15px;
   display: flex;
   flex-direction: column;
@@ -422,16 +428,16 @@ body {
 .tab-pane {
   display: none;
   width: 100%;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
+  overflow: visible;
 }
 
 .tab-pane.active {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
+  overflow: visible;
 }
 
 .chart-grid {

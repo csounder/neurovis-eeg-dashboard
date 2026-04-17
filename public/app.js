@@ -1775,6 +1775,47 @@ function handleDeviceList(devices) {
   `;
     })
     .join("");
+
+  // Update header device selector dropdown
+  updateHeaderDeviceSelector();
+}
+
+// Update header device dropdown to match device list
+function updateHeaderDeviceSelector() {
+  const selector = document.getElementById("headerDeviceSelector");
+  if (!selector) return;
+
+  const devices = state.devices || [];
+  selector.innerHTML = '<option value="">No Device</option>';
+
+  devices.forEach((device, idx) => {
+    const option = document.createElement("option");
+    option.value = idx;
+    const deviceType =
+      device.name.includes("Athena") || device.name.includes("Muse S")
+        ? "Muse S"
+        : device.name.includes("Ganglion")
+          ? "Ganglion"
+          : device.name.includes("Ultracortex")
+            ? "Ultracortex"
+            : "Muse 2";
+    option.textContent = `${device.name} (${deviceType})`;
+
+    // Mark as selected if this device is connected
+    if (state.selectedDeviceIndex === idx) {
+      option.textContent = `✅ ${option.textContent}`;
+      option.selected = true;
+    }
+
+    selector.appendChild(option);
+  });
+
+  // Add change listener
+  selector.onchange = (e) => {
+    if (e.target.value !== "") {
+      connectDevice(parseInt(e.target.value));
+    }
+  };
 }
 
 // ============================================================================
@@ -1999,19 +2040,36 @@ function setupEventListeners() {
     });
   }
 
-  // Simulator
-  document.getElementById("simulatorToggle").addEventListener("change", (e) => {
+  // Simulator (both sidebar and header)
+  const handleSimulatorToggle = (checked) => {
     lastSliderUpdate["simulatorMode"] = Date.now(); // Track when user toggled
     if (window.ws && window.ws.readyState === WebSocket.OPEN) {
       window.ws.send(JSON.stringify({ type: "toggle_simulator" }));
-      document.getElementById("simControls").style.display = e.target.checked
+      document.getElementById("simControls").style.display = checked
         ? "block"
         : "none";
       // Update indicator immediately
-      state.settings.simulatorMode = e.target.checked;
+      state.settings.simulatorMode = checked;
       updateDataSourceIndicator();
+      // Sync both toggles
+      document.getElementById("simulatorToggle").checked = checked;
+      document.getElementById("headerSimulatorToggle").checked = checked;
     }
-  });
+  };
+
+  const sidebarToggle = document.getElementById("simulatorToggle");
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener("change", (e) => {
+      handleSimulatorToggle(e.target.checked);
+    });
+  }
+
+  const headerToggle = document.getElementById("headerSimulatorToggle");
+  if (headerToggle) {
+    headerToggle.addEventListener("change", (e) => {
+      handleSimulatorToggle(e.target.checked);
+    });
+  }
 
   document.getElementById("simFreq").addEventListener("change", (e) => {
     document.getElementById("simFreqDisplay").textContent = e.target.value;
