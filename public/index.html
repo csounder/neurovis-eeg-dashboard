@@ -534,14 +534,21 @@
                </div>
               </div>
 
-              <!-- Mind Metrics Tab -->
-              <div id="mindmetrics" class="tab-pane">
-                <div style="padding: 20px;">
-                  <h2 style="margin-top: 0; color: var(--text-primary); display: flex; align-items: center; gap: 10px;">
-                    💭 Mind Metrics — Attention, Meditation & Drowsiness
-                  </h2>
-                  
-                  <!-- 3 Metric Cards -->
+               <!-- Mind Metrics Tab -->
+               <div id="mindmetrics" class="tab-pane">
+                 <div style="padding: 20px;">
+                   <h2 style="margin-top: 0; color: var(--text-primary); display: flex; align-items: center; gap: 10px;">
+                     💭 Mind Metrics — Attention, Meditation & Drowsiness
+                   </h2>
+                   
+                   <!-- Calibration Status Hint -->
+                   <div style="padding: 12px; background: var(--bg-tertiary); border-left: 4px solid #f59e0b; margin-bottom: 16px; border-radius: 4px;">
+                     <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary);">
+                       📌 <strong id="metricsCalibStatus">Uncalibrated — showing raw metrics</strong>
+                     </p>
+                   </div>
+                   
+                   <!-- 3 Metric Cards -->
                   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px;">
                     <!-- Attention Card -->
                     <div style="padding: 20px; background: var(--bg-secondary); border: 2px solid #f59e0b; border-radius: 8px; border-left: 8px solid #f59e0b;">

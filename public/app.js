@@ -4195,14 +4195,33 @@ function calculateMindMetrics() {
   const beta = rel.beta || 0.001;
   const gamma = rel.gamma || 0.001;
 
-  // Attention: Beta / (Alpha + Theta)
-  const attention = beta / (alpha + theta);
+  let attention, meditation, drowsiness;
+  let isCalibrated = false;
 
-  // Meditation: Alpha / (Beta + Gamma)
-  const meditation = alpha / (beta + gamma);
+  // Check if calibration is complete (z-scores available and locked)
+  if (brainState.calibration.isLocked && brainState.zscores) {
+    isCalibrated = true;
+    // Use z-score calculations
+    const zDelta = brainState.zscores.delta || 0;
+    const zTheta = brainState.zscores.theta || 0;
+    const zAlpha = brainState.zscores.alpha || 0;
+    const zBeta = brainState.zscores.beta || 0;
+    const zGamma = brainState.zscores.gamma || 0;
 
-  // Drowsiness: Delta / (Alpha + Beta)
-  const drowsiness = delta / (alpha + beta);
+    // Attention: Z-Beta / (Z-Alpha + Z-Theta)
+    attention = zBeta / (Math.abs(zAlpha) + Math.abs(zTheta) + 0.001);
+
+    // Meditation: Z-Alpha / (Z-Beta + Z-Gamma)
+    meditation = zAlpha / (Math.abs(zBeta) + Math.abs(zGamma) + 0.001);
+
+    // Drowsiness: Z-Delta / (Z-Alpha + Z-Beta)
+    drowsiness = zDelta / (Math.abs(zAlpha) + Math.abs(zBeta) + 0.001);
+  } else {
+    // Use raw ratio calculations (pre-calibration)
+    attention = beta / (alpha + theta);
+    meditation = alpha / (beta + gamma);
+    drowsiness = delta / (alpha + beta);
+  }
 
   // Store in history
   mindMetrics.attentionHistory.push(attention);
@@ -4216,43 +4235,91 @@ function calculateMindMetrics() {
   }
 
   // Update UI
-  updateMindMetricsDisplay(attention, meditation, drowsiness);
+  updateMindMetricsDisplay(attention, meditation, drowsiness, isCalibrated);
 
-  return { attention, meditation, drowsiness };
+  return { attention, meditation, drowsiness, isCalibrated };
 }
 
-function updateMindMetricsDisplay(attention, meditation, drowsiness) {
-  // Update metric values
+function updateMindMetricsDisplay(
+  attention,
+  meditation,
+  drowsiness,
+  isCalibrated,
+) {
+  // Update calibration status hint
+  const calibStatus = document.getElementById("metricsCalibStatus");
+  if (calibStatus) {
+    if (isCalibrated) {
+      calibStatus.textContent =
+        "✓ Calibrated — showing z-score metrics (σ = 1 standard deviation)";
+      calibStatus.parentElement.style.borderLeftColor = "#22c55e";
+    } else {
+      calibStatus.textContent =
+        "Uncalibrated — showing raw metrics. Go to 🧠 Brain State tab to calibrate";
+      calibStatus.parentElement.style.borderLeftColor = "#f59e0b";
+    }
+  }
+
+  // Update metric values with calibration status
   const attentionEl = document.getElementById("metricAttention");
   const meditationEl = document.getElementById("metricMeditation");
   const drowsinessEl = document.getElementById("metricDrowsiness");
 
-  if (attentionEl) attentionEl.textContent = attention.toFixed(1);
-  if (meditationEl) meditationEl.textContent = meditation.toFixed(1);
-  if (drowsinessEl) drowsinessEl.textContent = drowsiness.toFixed(1);
+  const valueDisplay = isCalibrated
+    ? (val) => val.toFixed(2)
+    : (val) => val.toFixed(1);
+  const unit = isCalibrated ? " σ" : "";
 
-  // Update status indicators
-  updateMetricStatus(
-    attention,
-    document.getElementById("attentionStatus"),
-    "Focused Thinking",
-    "Low engagement",
-    50,
-  );
-  updateMetricStatus(
-    meditation,
-    document.getElementById("meditationStatus"),
-    "Deep Calm",
-    "Active thinking",
-    100,
-  );
-  updateMetricStatus(
-    drowsiness,
-    document.getElementById("drowsinessStatus"),
-    "Alert & Awake",
-    "Drowsy",
-    30,
-  );
+  if (attentionEl) attentionEl.textContent = valueDisplay(attention) + unit;
+  if (meditationEl) meditationEl.textContent = valueDisplay(meditation) + unit;
+  if (drowsinessEl) drowsinessEl.textContent = valueDisplay(drowsiness) + unit;
+
+  // Update status indicators with z-score thresholds if calibrated
+  if (isCalibrated) {
+    updateZScoreMetricStatus(
+      attention,
+      document.getElementById("attentionStatus"),
+      "Hyperfocused",
+      "Normal focus",
+      "Low engagement",
+    );
+    updateZScoreMetricStatus(
+      meditation,
+      document.getElementById("meditationStatus"),
+      "Deep meditation",
+      "Balanced",
+      "Active thinking",
+    );
+    updateZScoreMetricStatus(
+      drowsiness,
+      document.getElementById("drowsinessStatus"),
+      "Very alert",
+      "Normal alertness",
+      "Drowsy",
+    );
+  } else {
+    updateMetricStatus(
+      attention,
+      document.getElementById("attentionStatus"),
+      "Focused Thinking",
+      "Low engagement",
+      50,
+    );
+    updateMetricStatus(
+      meditation,
+      document.getElementById("meditationStatus"),
+      "Deep Calm",
+      "Active thinking",
+      100,
+    );
+    updateMetricStatus(
+      drowsiness,
+      document.getElementById("drowsinessStatus"),
+      "Alert & Awake",
+      "Drowsy",
+      30,
+    );
+  }
 
   // Update timeline charts
   updateMindMetricsCharts();
@@ -4264,6 +4331,38 @@ function updateMetricStatus(value, element, highLabel, lowLabel, threshold) {
   element.textContent = isHigh ? `✓ ${highLabel}` : `⚠ ${lowLabel}`;
   element.style.color = isHigh ? "#22c55e" : "#f59e0b";
   element.parentElement.style.borderLeftColor = isHigh ? "#22c55e" : "#f59e0b";
+}
+
+function updateZScoreMetricStatus(
+  zvalue,
+  element,
+  highLabel,
+  normalLabel,
+  lowLabel,
+) {
+  if (!element) return;
+  let text, color, borderColor;
+
+  if (zvalue > 1) {
+    // Green: Above baseline
+    text = `✓ ${highLabel}`;
+    color = "#22c55e";
+    borderColor = "#22c55e";
+  } else if (zvalue < -1) {
+    // Red: Below baseline
+    text = `⚠ ${lowLabel}`;
+    color = "#ef4444";
+    borderColor = "#ef4444";
+  } else {
+    // Yellow: Normal range
+    text = `○ ${normalLabel}`;
+    color = "#f59e0b";
+    borderColor = "#f59e0b";
+  }
+
+  element.textContent = text;
+  element.style.color = color;
+  element.parentElement.style.borderLeftColor = borderColor;
 }
 
 function updateMindMetricsCharts() {
