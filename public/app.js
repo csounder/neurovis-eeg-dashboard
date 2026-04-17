@@ -1540,6 +1540,21 @@ function handleServerMessage(msg) {
       break;
     case "device_list":
       handleDeviceList(msg.devices);
+      // Update React UI device list
+      if (window._reactSetBtDevs && msg.devices) {
+        const btDevs = msg.devices.map((dev) => ({
+          name: dev.name,
+          mac: dev.mac || "",
+          device_type: dev.specs?.name?.toLowerCase().includes("athena")
+            ? "muse_athena"
+            : dev.specs?.name?.toLowerCase().includes("Muse S")
+              ? "muse_s"
+              : dev.specs?.name?.toLowerCase().includes("Muse 2")
+                ? "muse_2"
+                : "unknown",
+        }));
+        window._reactSetBtDevs(btDevs);
+      }
       break;
     case "settings_updated":
       state.settings = msg.settings;
@@ -1553,6 +1568,21 @@ function handleServerMessage(msg) {
     case "init":
       state.settings = msg.settings;
       handleDeviceList(msg.devices || []);
+      // Update React UI device list
+      if (window._reactSetBtDevs && msg.devices) {
+        const btDevs = (msg.devices || []).map((dev) => ({
+          name: dev.name,
+          mac: dev.mac || "",
+          device_type: dev.specs?.name?.toLowerCase().includes("athena")
+            ? "muse_athena"
+            : dev.specs?.name?.toLowerCase().includes("Muse S")
+              ? "muse_s"
+              : dev.specs?.name?.toLowerCase().includes("Muse 2")
+                ? "muse_2"
+                : "unknown",
+        }));
+        window._reactSetBtDevs(btDevs);
+      }
       updateStreamingStatusDisplay();
       updateDataSourceIndicator();
       break;
