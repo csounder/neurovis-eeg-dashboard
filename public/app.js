@@ -1704,14 +1704,15 @@ function handleDeviceList(devices) {
 
   if (devices.length === 0) {
     container.innerHTML = `
-      <div style="text-align: center; padding: 12px;">
-        <p style="color: #aaa; margin: 8px 0; font-size: 0.9rem;">📱 No Muse devices found</p>
-        <p style="color: #666; margin: 8px 0; font-size: 0.75rem;">Try one of:</p>
-        <ul style="text-align: left; font-size: 0.75rem; color: #666; margin: 8px 0; padding-left: 12px;">
-          <li>Ensure Muse device is paired</li>
-          <li>Check Bluetooth connection</li>
-          <li>Use <strong>Simulator Mode</strong> below</li>
-        </ul>
+      <div style="text-align: center; padding: 12px; background: var(--bg-tertiary); border-radius: 6px; border: 1px solid #444;">
+        <p style="color: #aaa; margin: 8px 0; font-size: 0.9rem;">📱 No Real Devices Detected</p>
+        <p style="color: #f59e0b; margin: 8px 0; font-size: 0.85rem; font-weight: 600;">✨ Use Simulator Mode to Test!</p>
+        <p style="color: #666; margin: 8px 0; font-size: 0.75rem;">Scroll down to the <strong>🎲 Simulator</strong> section and click <strong>Enable Test Mode</strong> to test the dashboard with synthetic EEG data.</p>
+        <div style="margin-top: 12px; padding: 8px; background: #1a3a3a; border-radius: 4px; border-left: 3px solid #4dd0e1;">
+          <p style="margin: 0; font-size: 0.7rem; color: #4dd0e1;">
+            <strong>💡 For real Muse device:</strong> Pair device in Bluetooth settings, then ensure MuseBridge is running.
+          </p>
+        </div>
       </div>
     `;
     return;
@@ -1734,12 +1735,17 @@ function handleDeviceList(devices) {
       const info = DEVICE_INFO[deviceType];
 
       return `
-    <div class="device-card" onclick="connectDevice(${idx})" style="border: ${borderStyle}; cursor: pointer; transition: all 0.2s; padding: 12px; background: var(--bg-secondary); border-radius: 6px;">
+    <div class="device-card" onclick="connectDevice(${idx})" style="border: ${borderStyle}; cursor: pointer; transition: all 0.2s; padding: 12px; background: var(--bg-secondary); border-radius: 6px; position: relative;">
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
         <span style="font-size: 1.2rem;">${info.icon}</span>
         <div style="flex: 1;">
-          <div class="device-name" style="font-weight: 700; margin: 0; color: #00ff88;">${device.name} ${isSelected ? "✓" : ""}</div>
+          <div class="device-name" style="font-weight: 700; margin: 0; color: #00ff88;">
+            ${isSelected ? "✅ CONNECTED: " : "🔗 "} ${device.name}
+          </div>
           <div style="font-size: 0.7rem; color: #888; margin: 2px 0;">${info.name}</div>
+          <div style="font-size: 0.65rem; color: #f59e0b; margin-top: 4px; font-weight: 600;">
+            ${isSelected ? "✓ Active" : "Click to Connect"}
+          </div>
         </div>
       </div>
       <div style="padding-top: 8px; border-top: 1px solid #333; font-size: 0.75rem; color: #999;">
@@ -4300,6 +4306,9 @@ if (!window.wsOnMessage) {
 function setupOSCScaler() {
   const slider = document.getElementById("oscScaler");
   const display = document.getElementById("oscScalerDisplay");
+
+  // Return early if elements don't exist (not in current UI)
+  if (!slider || !display) return;
 
   slider.addEventListener("change", (e) => {
     const value = parseFloat(e.target.value);
