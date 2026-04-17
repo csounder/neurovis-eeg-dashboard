@@ -856,13 +856,17 @@ function broadcastBandPowers(absolute, relative) {
   // Update calibration if in progress
   updateCalibrationBaseline(relative);
 
-  // Throttle to WS rate (10 Hz = 100ms)
+  // CRITICAL: Send to OSC EVERY TIME (no throttle!)
+  // Csound/Max/TouchDesigner/Unity need low-latency band power updates
+  sendBandPowersOSC(absolute, relative);
+
+  // Throttle WebSocket to avoid overwhelming browser clients (10 Hz = 100ms)
   if (now - lastBandPowersBroadcast < WS_BROADCAST_INTERVAL_MS) {
     return;
   }
   lastBandPowersBroadcast = now;
 
-  // Send to WebSocket clients (React UI)
+  // Send to WebSocket clients (React UI) - throttled
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(
@@ -874,9 +878,6 @@ function broadcastBandPowers(absolute, relative) {
       );
     }
   });
-
-  // CRITICAL: Also send to OSC (Csound, Max/MSP, TouchDesigner, Unity, etc)
-  sendBandPowersOSC(absolute, relative);
 }
 
 let lastMotionBroadcast = { accel: 0, gyro: 0, ppg: 0 };
