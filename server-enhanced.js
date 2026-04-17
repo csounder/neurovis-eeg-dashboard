@@ -769,11 +769,13 @@ function sendOSCtoCSsound(eeg) {
   }
 }
 
+let oscBandPowerCount = 0;
 function sendBandPowersOSC(absolute, relative) {
   if (!oscPort) return;
 
   try {
     const bands = ["delta", "theta", "alpha", "beta", "gamma"];
+    oscBandPowerCount++;
 
     // Send absolute band powers (log scale)
     if (settings.oscStreams.bandAbsolute) {
@@ -794,7 +796,7 @@ function sendBandPowersOSC(absolute, relative) {
       });
     }
 
-    // Send relative band powers (0-1 normalized)
+    // Send relative band powers (0-1 normalized) ← Csound uses this
     if (settings.oscStreams.bandRelative) {
       oscPort.send({
         address: `${settings.oscPrefix}/bands/relative`,
@@ -804,23 +806,33 @@ function sendBandPowersOSC(absolute, relative) {
         })),
       });
 
-      // Per-band addresses
+      // Per-band addresses (the main ones Csound/Max/TD/Unity listen to)
       bands.forEach((band) => {
         oscPort.send({
           address: `${settings.oscPrefix}/bands/relative/${band}`,
           args: [{ type: "f", value: relative[band] || 0 }],
         });
       });
+
+      // Log every Nth message to avoid spam
+      if (oscBandPowerCount % 10 === 0) {
+        console.log(
+          `📡 OSC: Sent ${oscBandPowerCount} band power messages → ${config.oscHost}:${config.oscPort}`,
+          `(α=${relative.alpha?.toFixed(3)} β=${relative.beta?.toFixed(3)} θ=${relative.theta?.toFixed(3)})`,
+        );
+      }
     }
   } catch (e) {
-    console.error("Band Powers OSC error:", e.message);
+    console.error("❌ Band Powers OSC error:", e.message);
   }
 }
 
+let oscMotionCount = 0;
 function sendMotionOSC(address, values) {
   if (!oscPort || !values || values.length === 0) return;
 
   try {
+    oscMotionCount++;
     oscPort.send({
       address: address,
       args: values.map((val) => ({
@@ -828,8 +840,12 @@ function sendMotionOSC(address, values) {
         value: val,
       })),
     });
+
+    if (oscMotionCount % 5 === 0) {
+      console.log(`📡 OSC: Motion message #${oscMotionCount} → ${address}`);
+    }
   } catch (e) {
-    console.error(`Motion OSC error (${address}):`, e.message);
+    console.error(`❌ Motion OSC error (${address}):`, e.message);
   }
 }
 
