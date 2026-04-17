@@ -34,6 +34,7 @@ class MuseManager: NSObject, IXNMuseListener, IXNMuseDataListener {
     var activeMuse: IXNMuse?
     var isConnected = false
     var museManager: IXNMuseManager?
+    var keepaliveTimer: Timer?
     
     override init() {
         super.init()
@@ -82,10 +83,35 @@ class MuseManager: NSObject, IXNMuseListener, IXNMuseDataListener {
         // Run async to establish connection
         muse.runAsynchronously()
         isConnected = true
+        
+        // Start keepalive to prevent timeout
+        startKeepalive()
+    }
+    
+    func startKeepalive() {
+        // Stop any existing keepalive timer
+        stopKeepalive()
+        
+        // Send keepalive every 5 seconds to prevent timeout
+        keepaliveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self = self, let muse = self.activeMuse else { return }
+            
+            // Request device status to keep connection alive
+            // This prevents the ~30 second timeout
+            muse.sendCommand("s")  // Status command
+        }
+    }
+    
+    func stopKeepalive() {
+        keepaliveTimer?.invalidate()
+        keepaliveTimer = nil
     }
     
     func disconnectFromDevice() {
         guard let muse = activeMuse else { return }
+        
+        // Stop keepalive timer
+        stopKeepalive()
         
         muse.disconnect()
         activeMuse = nil
