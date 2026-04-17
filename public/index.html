@@ -391,8 +391,20 @@
             </div>
 
             <!-- Bands Tab -->
-            <div id="bands" class="tab-pane">
-              <div class="bands-grid">
+             <div id="bands" class="tab-pane">
+               <!-- Band Selector Bar -->
+               <div class="selector-bar">
+                 <span class="selector-label">Bands:</span>
+                 <div class="selector-group">
+                   <button class="selector-btn band-delta active" data-band="delta">δ Delta</button>
+                   <button class="selector-btn band-theta" data-band="theta">θ Theta</button>
+                   <button class="selector-btn band-alpha" data-band="alpha">α Alpha</button>
+                   <button class="selector-btn band-beta" data-band="beta">β Beta</button>
+                   <button class="selector-btn band-gamma" data-band="gamma">γ Gamma</button>
+                 </div>
+                 <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
+               </div>
+               <div class="bands-grid">
                 <div class="band-display">
                   <h3>Band Powers (Ch1)</h3>
                   <div class="band-bars">
@@ -521,10 +533,21 @@
                </div>
              </div>
 
-               <!-- FFT+Bands Tab (NeuroVis-style) -->
-               <div id="fftSpectrum" class="tab-pane">
-                <div class="chart-container">
-                  <h3>🎛️ FFT Spectrum + Power Bands</h3>
+                <!-- FFT+Bands Tab (NeuroVis-style) -->
+                <div id="fftSpectrum" class="tab-pane">
+                 <!-- Channel Selector Bar -->
+                 <div class="selector-bar">
+                   <span class="selector-label">Channels:</span>
+                   <div class="selector-group">
+                     <button class="selector-btn active" data-channel="TP9">TP9</button>
+                     <button class="selector-btn" data-channel="AF7">AF7</button>
+                     <button class="selector-btn" data-channel="AF8">AF8</button>
+                     <button class="selector-btn" data-channel="TP10">TP10</button>
+                   </div>
+                   <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
+                 </div>
+                 <div class="chart-container">
+                   <h3>🎛️ FFT Spectrum + Power Bands</h3>
                   <p class="sensor-info">Left: live frequency spectrum (0–60 Hz) with band regions color-coded. Right: all 5 band powers as animated bars with sparkline histories. Shows how spectral energy distributes across bands in real time.</p>
                   <canvas id="fftSpectrumCanvas" width="1100" height="350" style="width:100%;height:300px;border-radius:8px;background:#0d1117;"></canvas>
                 </div>
@@ -591,19 +614,43 @@
                 </div>
               </div>
 
-             <!-- 3D Waterfall Tab -->
-             <div id="waterfall" class="tab-pane">
-               <div class="chart-container">
-                 <h3>🌊 3D Waterfall — IBVA-style</h3>
+              <!-- 3D Waterfall Tab -->
+              <div id="waterfall" class="tab-pane">
+                <!-- Band Selector Bar -->
+                <div class="selector-bar">
+                  <span class="selector-label">Band:</span>
+                  <div class="selector-group">
+                    <button class="selector-btn band-delta active" data-band="delta">δ Delta</button>
+                    <button class="selector-btn band-theta" data-band="theta">θ Theta</button>
+                    <button class="selector-btn band-alpha" data-band="alpha">α Alpha</button>
+                    <button class="selector-btn band-beta" data-band="beta">β Beta</button>
+                    <button class="selector-btn band-gamma" data-band="gamma">γ Gamma</button>
+                  </div>
+                  <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
+                </div>
+                <div class="chart-container">
+                  <h3>🌊 3D Waterfall — IBVA-style</h3>
                  <p class="sensor-info">Band power across all electrodes stacked in time (newer traces in front). Each line = one time snapshot. Height = amplitude. Inspired by the IBVA system's waterfall display for seeing temporal patterns in band power.</p>
                  <canvas id="waterfallCanvas" width="1300" height="580" style="width:100%;height:440px;border-radius:8px;background:#0d1117;"></canvas>
                </div>
              </div>
 
              <!-- Phase Tab -->
-             <div id="phase" class="tab-pane">
-               <div class="chart-container">
-                 <h3>🎯 Phase — Polar Plot</h3>
+              <div id="phase" class="tab-pane">
+                <!-- Band Selector Bar -->
+                <div class="selector-bar">
+                  <span class="selector-label">Band:</span>
+                  <div class="selector-group">
+                    <button class="selector-btn band-delta" data-band="delta">δ Delta</button>
+                    <button class="selector-btn band-theta" data-band="theta">θ Theta</button>
+                    <button class="selector-btn band-alpha active" data-band="alpha">α Alpha</button>
+                    <button class="selector-btn band-beta" data-band="beta">β Beta</button>
+                    <button class="selector-btn band-gamma" data-band="gamma">γ Gamma</button>
+                  </div>
+                  <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
+                </div>
+                <div class="chart-container">
+                  <h3>🎯 Phase — Polar Plot</h3>
                  <p class="sensor-info">Polar plot showing phase angle and magnitude of oscillations per electrode. Distance from center = power. Angle = instantaneous phase. Trails show recent trajectory. When electrodes cluster together, the brain regions are synchronizing.</p>
                  <canvas id="phaseCanvas" width="500" height="500" style="width:100%;max-width:460px;height:400px;border-radius:8px;background:#0d1117;display:block;margin:0 auto;"></canvas>
                </div>
