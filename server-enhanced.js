@@ -345,14 +345,14 @@ function initOSC() {
     localAddress: "127.0.0.1",
     localPort: 0,
     remoteAddress: config.oscHost,
-    remotePort: config.oscPort, // Send to 7400 (standard for Max/MSP, Csound)
+    remotePort: config.oscPort, // Send to 7400 (Csound primary, also Max/MSP, TouchDesigner, Unity)
     metadata: true,
   });
 
   oscPort.open();
   console.log(`✓ OSC client ready → ${config.oscHost}:${config.oscPort}`);
   console.log(`✓ OSC prefix: ${settings.oscPrefix}`);
-  console.log(`💡 Csound/Max listen on port ${config.oscPort}`);
+  console.log(`🎵 PRIMARY: Csound listening on port ${config.oscPort}`);
 
   oscPort.on("error", (err) => {
     console.error("❌ OSC Error:", err.message);
@@ -813,7 +813,7 @@ function sendBandPowersOSC(absolute, relative) {
         })),
       });
 
-      // Per-band addresses (the main ones Csound/Max/TD/Unity listen to)
+      // Per-band addresses (CSOUND PRIMARY, also works with Max/MSP, TouchDesigner, Unity)
       bands.forEach((band) => {
         // Format 1: /muse/bands/relative/alpha
         oscPort.send({
@@ -871,7 +871,8 @@ function broadcastBandPowers(absolute, relative) {
   updateCalibrationBaseline(relative);
 
   // CRITICAL: Send to OSC EVERY TIME (no throttle!)
-  // Csound/Max/TouchDesigner/Unity need low-latency band power updates
+  // PRIMARY TARGET: Csound (also Max/MSP, TouchDesigner, Unity)
+  // Needs low-latency band power updates at native 10 Hz rate
   sendBandPowersOSC(absolute, relative);
 
   // Throttle WebSocket to avoid overwhelming browser clients (10 Hz = 100ms)
@@ -1358,22 +1359,64 @@ app.get("/api/settings", (req, res) => {
 });
 
 app.get("/api/osc/config", (req, res) => {
-  // Show current OSC configuration
+  // Show current OSC configuration (Csound is primary target)
   res.json({
     oscHost: config.oscHost,
     oscPort: config.oscPort,
     oscPrefix: settings.oscPrefix,
     oscStreams: settings.oscStreams,
+    primaryTarget: "Csound (🎵 recommended)",
+    otherTargets: ["Max/MSP", "TouchDesigner", "Unity", "Pure Data"],
+    csoundSetup: `OSCinit ${config.oscPort}`,
     messageExamples: {
-      bandRelative: [
-        `${settings.oscPrefix}/bands/relative/alpha (float 0.0-1.0)`,
-        `${settings.oscPrefix}/elements/alpha_relative (float 0.0-1.0)`,
-      ],
       bandAbsolute: [
-        `${settings.oscPrefix}/bands/absolute/alpha (float dB)`,
-        `${settings.oscPrefix}/elements/alpha_absolute (float dB)`,
+        {
+          address: `${settings.oscPrefix}/elements/alpha_absolute`,
+          type: "float (dB)",
+          range: "0.0-3.0",
+          recommended: true,
+          csoundExample: `kAlpha OSCparm giPort, "${settings.oscPrefix}/elements/alpha_absolute", 0`,
+        },
+        {
+          address: `${settings.oscPrefix}/elements/beta_absolute`,
+          type: "float (dB)",
+        },
+        {
+          address: `${settings.oscPrefix}/elements/theta_absolute`,
+          type: "float (dB)",
+        },
+        {
+          address: `${settings.oscPrefix}/elements/delta_absolute`,
+          type: "float (dB)",
+        },
+        {
+          address: `${settings.oscPrefix}/elements/gamma_absolute`,
+          type: "float (dB)",
+        },
       ],
-      allBands: ["delta", "theta", "alpha", "beta", "gamma"],
+      bandRelative: [
+        {
+          address: `${settings.oscPrefix}/elements/alpha_relative`,
+          type: "float (0.0-1.0 normalized)",
+          note: "Use for scaling/modulation in Csound",
+        },
+        {
+          address: `${settings.oscPrefix}/elements/beta_relative`,
+          type: "float (0.0-1.0)",
+        },
+        {
+          address: `${settings.oscPrefix}/elements/theta_relative`,
+          type: "float (0.0-1.0)",
+        },
+        {
+          address: `${settings.oscPrefix}/elements/delta_relative`,
+          type: "float (0.0-1.0)",
+        },
+        {
+          address: `${settings.oscPrefix}/elements/gamma_relative`,
+          type: "float (0.0-1.0)",
+        },
+      ],
     },
   });
 });

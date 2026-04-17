@@ -1379,20 +1379,25 @@
                   style: {
                     fontSize: 9,
                     fontWeight: 700,
-                    color: th.t2,
+                    color: th.gd,
                     textTransform: "uppercase",
                     letterSpacing: ".05em",
-                    marginBottom: 8,
+                    marginBottom: 4,
                   },
                 },
-                "📡 OSC Prefix",
+                "🎵 OSC for Csound",
+              ),
+              h(
+                "div",
+                { style: { fontSize: 8, color: th.t3, marginBottom: 8 } },
+                "Set prefix (default: /muse) + port 7400",
               ),
               h(
                 "div",
                 { style: { display: "flex", gap: 6, alignItems: "center" } },
                 h("input", {
                   type: "text",
-                  placeholder: "/muse",
+                  placeholder: "/muse (Csound default)",
                   defaultValue: "/muse",
                   style: {
                     flex: 1,
@@ -1456,7 +1461,7 @@
                                 "[NeuroVis] OSC prefix set to:",
                                 prefix,
                               );
-                              setConnErr("✓ OSC prefix: " + prefix);
+                              setConnErr("🎵 Csound OSC prefix: " + prefix);
                             })
                             .catch(function (e) {
                               setConnErr("❌ Failed to set OSC prefix");
@@ -1482,8 +1487,20 @@
               ),
               h(
                 "div",
-                { style: { fontSize: 8, color: th.t3, marginTop: 6 } },
-                "e.g., /muse, /ganglion, /drC, /mysynth",
+                {
+                  style: {
+                    fontSize: 8,
+                    color: th.gd,
+                    marginTop: 6,
+                    fontWeight: 600,
+                  },
+                },
+                "🎵 For Csound: /muse or /drC",
+              ),
+              h(
+                "div",
+                { style: { fontSize: 8, color: th.t3, marginTop: 2 } },
+                "For OpenBCI: /ganglion, /openbci",
               ),
             ),
             // Actions
