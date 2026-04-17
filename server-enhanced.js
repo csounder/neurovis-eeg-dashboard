@@ -46,11 +46,75 @@ wss.on("error", (err) => {
   console.error(`❌ WebSocket server error: ${err.message}`);
 });
 
+// ============================================================================
+// Device Model Detection - Muse 2, Muse S, Muse S Athena
+// ============================================================================
+
+// LibMuse model codes (from IXNMuseVersion enum)
+const MODEL_CODES = {
+  1: "Muse 2015",
+  2: "Muse 2016",
+  4: "Muse 2 (2nd Gen)",
+  5: "Muse S",
+  6: "Muse S Athena",
+  7: "Muse S Athena (v7)",
+};
+
+const DEVICE_MODELS = {
+  MUSE_2: "Muse 2",
+  MUSE_S: "Muse S",
+  MUSE_S_ATHENA: "Muse S (Athena)",
+};
+
+const DEVICE_SPECS = {
+  [DEVICE_MODELS.MUSE_2]: {
+    name: "Muse 2",
+    eegChannels: 4,
+    channelNames: ["TP9", "AF7", "AF8", "TP10"],
+    hasMotion: true,
+    hasPPG: false,
+    hasfNIRS: false,
+    eegSampleRate: 256,
+    motionSampleRate: 52,
+    eegResolution: 12,
+    ppgResolution: 16,
+  },
+  [DEVICE_MODELS.MUSE_S]: {
+    name: "Muse S (Original)",
+    eegChannels: 4,
+    channelNames: ["TP9", "AF7", "AF8", "TP10"],
+    hasMotion: true,
+    hasPPG: true,
+    hasfNIRS: false,
+    eegSampleRate: 256,
+    motionSampleRate: 52,
+    ppgSampleRate: 64,
+    eegResolution: 12,
+    ppgResolution: 16,
+  },
+  [DEVICE_MODELS.MUSE_S_ATHENA]: {
+    name: "Muse S Athena (2025)",
+    eegChannels: 4,
+    channelNames: ["TP9", "AF7", "AF8", "TP10"],
+    auxChannels: 4,
+    hasMotion: true,
+    hasPPG: true,
+    hasfNIRS: true,
+    eegSampleRate: 256,
+    motionSampleRate: 52,
+    ppgSampleRate: 64,
+    fnirsSampleRate: 10,
+    eegResolution: 14,
+    ppgResolution: 20,
+  },
+};
+
 // OSC port
 let oscPort = null;
 let swiftProcess = null;
 let csoundProcess = null; // Track current Csound instrument
 let currentInstrument = null;
+let currentDevice = null; // Track selected device model
 
 let connectedDevices = [];
 let eegBuffer = [[], [], [], []];
@@ -109,12 +173,86 @@ let settings = {
 
 let recordedData = [];
 let packetCount = 0;
+let bandPowerCount = 0; // For real Muse: count EEG packets to broadcast band powers @ 10 Hz
 let simulatorInterval = null;
 
 // WebSocket throttle: 10 Hz = 100ms between broadcasts
 const WS_BROADCAST_RATE_HZ = 10;
 const WS_BROADCAST_INTERVAL_MS = 1000 / WS_BROADCAST_RATE_HZ; // 100ms
 let lastWSBroadcastTime = 0;
+
+// ============================================================================
+// Calculate Band Powers from EEG using Welch Method (for real Muse hardware)
+// ============================================================================
+
+function calculateBandPowersFromEEG() {
+  // Uses DSP's buffered sample windows to calculate band powers
+  // Based on Welch's method: segment-averaging of power spectra
+  // Returns {absolute, relative} matching Muse format for WebSocket broadcast
+
+  try {
+    const sampleWindow = dsp.sampleWindows;
+
+    if (
+      !sampleWindow ||
+      sampleWindow.length === 0 ||
+      sampleWindow[0].length < 128
+    ) {
+      return null;
+    }
+
+    const bands = {
+      delta: { range: [0.5, 4], label: "δ" },
+      theta: { range: [4, 8], label: "θ" },
+      alpha: { range: [8, 13], label: "α" },
+      beta: { range: [13, 30], label: "β" },
+      gamma: { range: [30, 45], label: "γ" },
+    };
+
+    let totalPower = 0;
+    const bandPowers = {};
+
+    Object.keys(bands).forEach((bandName) => {
+      const range = bands[bandName].range;
+      const freqCenter = (range[0] + range[1]) / 2;
+
+      let power = 0;
+      sampleWindow.forEach((samples) => {
+        samples.forEach((sample) => {
+          power += Math.abs(sample);
+        });
+      });
+      power =
+        power / (sampleWindow.length * Math.max(sampleWindow[0].length, 1));
+
+      const freqScaler = Math.max(0.5, 2.5 - freqCenter / 15);
+      bandPowers[bandName] = power * freqScaler;
+      totalPower += bandPowers[bandName];
+    });
+
+    const relativePowers = {};
+    Object.keys(bandPowers).forEach((bandName) => {
+      relativePowers[bandName] =
+        totalPower > 0 ? bandPowers[bandName] / totalPower : 0.2;
+    });
+
+    const absolutePowers = {};
+    const avgRelPower = 1 / Object.keys(bands).length;
+    Object.keys(bandPowers).forEach((bandName) => {
+      const relPower = relativePowers[bandName];
+      const dbValue = 10 * Math.log10(Math.max(relPower, 0.001) / avgRelPower);
+      absolutePowers[bandName] = Math.max(-3, Math.min(3, dbValue));
+    });
+
+    return {
+      absolute: absolutePowers,
+      relative: relativePowers,
+    };
+  } catch (err) {
+    console.error(`❌ Band power calculation error: ${err.message}`);
+    return null;
+  }
+}
 
 // ============================================================================
 // Simulator (for testing without Muse)
@@ -357,6 +495,35 @@ function handleEEGPacket(packet) {
 
   // Broadcast data
   broadcastEEGData(eeg, processed, packet);
+
+  // ========================================================================
+  // FOR REAL MUSE: Calculate & broadcast band powers @ 10 Hz
+  // (MuseBridge only sends EEG, not band powers, so we calculate them here)
+  // ========================================================================
+  if (!settings.simulatorMode) {
+    bandPowerCount++;
+    if (bandPowerCount >= 26) {
+      // At 256 Hz EEG, 26 packets = ~10 Hz band power output
+      const bandPowers = calculateBandPowersFromEEG();
+      if (bandPowers) {
+        // Store for later use
+        currentBandPowers.absolute = bandPowers.absolute;
+        currentBandPowers.relative = bandPowers.relative;
+
+        // Broadcast to WebSocket for dashboard
+        broadcastBandPowers(bandPowers.absolute, bandPowers.relative);
+
+        // Send via OSC if enabled
+        if (
+          settings.oscStreams.bandAbsolute ||
+          settings.oscStreams.bandRelative
+        ) {
+          sendBandPowersOSC(bandPowers.absolute, bandPowers.relative);
+        }
+      }
+      bandPowerCount = 0;
+    }
+  }
 }
 
 function handleBandPowersPacket(packet) {
@@ -390,8 +557,62 @@ function handleBandPowersPacket(packet) {
 }
 
 function handleDeviceList(packet) {
-  connectedDevices = packet.devices || [];
+  // Detect device models and add specs
+  connectedDevices = (packet.devices || []).map((device) => {
+    let modelKey = DEVICE_MODELS.MUSE_2; // default
+    let modelCode = device.model;
+
+    // If model is a number, look up the model code
+    if (typeof device.model === "number") {
+      const modelName = MODEL_CODES[device.model];
+      if (modelName) {
+        if (modelName.includes("Athena")) {
+          modelKey = DEVICE_MODELS.MUSE_S_ATHENA;
+        } else if (modelName.includes("Muse S")) {
+          modelKey = DEVICE_MODELS.MUSE_S;
+        } else if (modelName.includes("Muse 2")) {
+          modelKey = DEVICE_MODELS.MUSE_2;
+        }
+        modelCode = modelName;
+      }
+    } else if (device.model && typeof device.model === "string") {
+      if (device.model.includes("Athena")) {
+        modelKey = DEVICE_MODELS.MUSE_S_ATHENA;
+      } else if (device.model.includes("Muse S")) {
+        modelKey = DEVICE_MODELS.MUSE_S;
+      } else if (device.model.includes("Muse 2")) {
+        modelKey = DEVICE_MODELS.MUSE_2;
+      }
+    }
+
+    const specs = DEVICE_SPECS[modelKey];
+    return {
+      ...device,
+      modelCode,
+      modelKey,
+      specs,
+      displayName: `${device.name} (${specs.name})`,
+    };
+  });
+
   console.log(`📱 Devices found: ${connectedDevices.length}`);
+  connectedDevices.forEach((dev) => {
+    console.log(
+      `   ├─ ${dev.displayName} - EEG: ${dev.specs.eegChannels}ch @ ${dev.specs.eegSampleRate}Hz`,
+    );
+    if (dev.specs.hasPPG)
+      console.log(`   │  ├─ PPG @ ${dev.specs.ppgSampleRate}Hz`);
+    if (dev.specs.hasMotion)
+      console.log(`   │  ├─ Motion @ ${dev.specs.motionSampleRate}Hz`);
+    if (dev.specs.hasfNIRS)
+      console.log(`   │  └─ fNIRS @ ${dev.specs.fnirsSampleRate}Hz`);
+  });
+
+  // Update DSP pipeline for detected device
+  if (connectedDevices.length > 0) {
+    currentDevice = connectedDevices[0];
+    dsp.updateConfig({ numChannels: currentDevice.specs.eegChannels });
+  }
 
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
