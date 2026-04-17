@@ -1718,6 +1718,12 @@ function handleDeviceList(devices) {
   const container = document.getElementById("deviceList");
   state.devices = devices;
 
+  // Skip sidebar rendering if using React UI (no deviceList element)
+  if (!container) {
+    console.log("[NeuroVis] Using React UI — skipping sidebar device list");
+    return;
+  }
+
   if (devices.length === 0) {
     container.innerHTML = `
       <div style="text-align: center; padding: 12px; background: var(--bg-tertiary); border-radius: 6px; border: 1px solid #444;">
@@ -2078,17 +2084,24 @@ function setupEventListeners() {
     });
   }
 
-  document.getElementById("simFreq").addEventListener("change", (e) => {
-    document.getElementById("simFreqDisplay").textContent = e.target.value;
-  });
+  // Simulator frequency (sidebar only)
+  const simFreq = document.getElementById("simFreq");
+  if (simFreq) {
+    simFreq.addEventListener("change", (e) => {
+      const simFreqDisplay = document.getElementById("simFreqDisplay");
+      if (simFreqDisplay) simFreqDisplay.textContent = e.target.value;
+    });
+  }
 
-  // Recording
-  document
-    .getElementById("recordBtn")
-    .addEventListener("click", toggleRecording);
-  document
-    .getElementById("downloadBtn")
-    .addEventListener("click", downloadRecording);
+  // Recording (sidebar only)
+  const recordBtn = document.getElementById("recordBtn");
+  if (recordBtn) {
+    recordBtn.addEventListener("click", toggleRecording);
+  }
+  const downloadBtn = document.getElementById("downloadBtn");
+  if (downloadBtn) {
+    downloadBtn.addEventListener("click", downloadRecording);
+  }
 
   // Instrument Selection - DISABLED
   // initializeInstrumentSelector()
