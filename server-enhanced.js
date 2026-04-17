@@ -567,7 +567,16 @@ function handleBandPowersPacket(packet) {
 
 function handleDeviceList(packet) {
   // Detect device models and add specs
+  console.log(
+    `[handleDeviceList] Received packet.devices:`,
+    JSON.stringify(packet.devices, null, 2),
+  );
+
   connectedDevices = (packet.devices || []).map((device) => {
+    console.log(
+      `[handleDeviceList] Processing device:`,
+      JSON.stringify(device, null, 2),
+    );
     let modelKey = DEVICE_MODELS.MUSE_2; // default
     let modelCode = device.model;
 
@@ -1179,12 +1188,6 @@ function broadcastSettings() {
 // For Muse hardware, we auto-detect via MuseBridge (WebSocket)
 // These endpoints return empty data for backward compatibility
 
-app.get("/api/ports", (req, res) => {
-  // Legacy: Used to scan for serial ports
-  // For Muse + MuseBridge: Not needed (auto-detection via BLE)
-  res.json({ ports: [], bluetooth: [] });
-});
-
 app.post("/api/connect", (req, res) => {
   // Legacy: Used to connect to OpenBCI/serial devices
   // For Muse: Use WebSocket "connect_device" command instead
@@ -1243,18 +1246,29 @@ app.get("/api/status", (req, res) => {
 app.get("/api/ports", (req, res) => {
   // Return detected Bluetooth devices from MuseBridge
   // Format: { ports: [], bluetooth: [ { name, mac, device_type }, ... ] }
-  const bluetoothDevices = connectedDevices.map((dev) => ({
-    name: dev.name,
-    mac: dev.mac || "",
-    device_type: dev.specs?.name?.toLowerCase().includes("athena")
+  console.log(
+    `[/api/ports] connectedDevices count: ${connectedDevices.length}`,
+  );
+
+  const bluetoothDevices = connectedDevices.map((dev) => {
+    const deviceType = dev.specs?.name?.toLowerCase().includes("athena")
       ? "muse_athena"
       : dev.specs?.name?.toLowerCase().includes("Muse S")
         ? "muse_s"
         : dev.specs?.name?.toLowerCase().includes("Muse 2")
           ? "muse_2"
-          : "unknown",
-  }));
+          : "unknown";
 
+    console.log(`  ├─ ${dev.name} (type: ${dev.specs?.name}) → ${deviceType}`);
+
+    return {
+      name: dev.name,
+      mac: dev.mac || "",
+      device_type: deviceType,
+    };
+  });
+
+  console.log(`[/api/ports] Returning ${bluetoothDevices.length} devices`);
   res.json({
     ports: [], // No serial ports for Muse (uses Bluetooth via MuseBridge)
     bluetooth: bluetoothDevices,
