@@ -1098,6 +1098,36 @@ function broadcastSettings() {
 // ============================================================================
 // REST API Endpoints
 // ============================================================================
+// Legacy OpenBCI API endpoints (stubs for Muse support)
+// ============================================================================
+
+// For Muse hardware, we auto-detect via MuseBridge (WebSocket)
+// These endpoints return empty data for backward compatibility
+
+app.get("/api/ports", (req, res) => {
+  // Legacy: Used to scan for serial ports
+  // For Muse + MuseBridge: Not needed (auto-detection via BLE)
+  res.json({ ports: [], bluetooth: [] });
+});
+
+app.post("/api/connect", (req, res) => {
+  // Legacy: Used to connect to OpenBCI/serial devices
+  // For Muse: Use WebSocket "connect_device" command instead
+  const { device_type, mac_address } = req.body;
+
+  if (device_type === "ganglion") {
+    res.json({
+      status: "ganglion_not_supported",
+      info: "Use WebSocket for Muse devices",
+    });
+  } else if (mac_address) {
+    res.json({ status: "connected", device: mac_address });
+  } else {
+    res.json({ status: "ok", info: "Use WebSocket for device connection" });
+  }
+});
+
+// ============================================================================
 
 app.get("/api/status", (req, res) => {
   res.json({
