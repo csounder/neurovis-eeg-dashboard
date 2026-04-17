@@ -862,6 +862,7 @@ function broadcastBandPowers(absolute, relative) {
   }
   lastBandPowersBroadcast = now;
 
+  // Send to WebSocket clients (React UI)
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(
@@ -873,6 +874,9 @@ function broadcastBandPowers(absolute, relative) {
       );
     }
   });
+
+  // CRITICAL: Also send to OSC (Csound, Max/MSP, TouchDesigner, Unity, etc)
+  sendBandPowersOSC(absolute, relative);
 }
 
 let lastMotionBroadcast = { accel: 0, gyro: 0, ppg: 0 };
