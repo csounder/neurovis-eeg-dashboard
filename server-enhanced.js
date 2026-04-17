@@ -157,12 +157,12 @@ let settings = {
 
   // OSC Stream Selection
   oscStreams: {
-    rawEEG: true, // /muse/eeg - Raw 256 Hz EEG
-    bandAbsolute: false, // /muse/bands/absolute - Log-scale absolute band powers (10 Hz)
-    bandRelative: false, // /muse/bands/relative - Relative band powers 0-1 (10 Hz)
+    rawEEG: false, // /muse/eeg - Raw 256 Hz EEG (HIGH BANDWIDTH - disable unless needed)
+    bandAbsolute: true, // /muse/bands/absolute - Log-scale absolute band powers (10 Hz)
+    bandRelative: true, // /muse/bands/relative - Relative band powers 0-1 (10 Hz) ← USE THIS
     motionAccel: false, // /muse/acc - Accelerometer X,Y,Z (10 Hz)
     motionGyro: false, // /muse/gyro - Gyroscope X,Y,Z (10 Hz)
-    motionPPG: false, // /muse/ppg - Heart rate / PPG red,green,ir (1 Hz)
+    motionPPG: true, // /muse/ppg - Heart rate / PPG red,green,ir (1 Hz)
   },
 
   // OSC Output Scaling
