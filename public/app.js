@@ -288,38 +288,45 @@ function updateWaterfallCanvas() {
     );
   }
   nvState.waterfallHistory.push(row);
-  if (nvState.waterfallHistory.length > 80) nvState.waterfallHistory.shift();
+  if (nvState.waterfallHistory.length > 90) nvState.waterfallHistory.shift();
 
-  const oX = 50,
-    oY = 30,
+  const oX = 60,
+    oY = 35,
     nRows = nvState.waterfallHistory.length;
-  const binW = (W - 120) / nBins;
+  const binW = (W - 140) / nBins;
 
-  // Draw back to front
+  // Get selected band index (0-4: delta, theta, alpha, beta, gamma)
+  const bandMap = { delta: 0, theta: 1, alpha: 2, beta: 3, gamma: 4 };
+  const selectedBandIdx = bandMap[selectorState.selectedBand] || 2; // Default to alpha
+  const bandColor = NV_COLORS[selectedBandIdx];
+
+  // Draw back to front (3D perspective: far to near)
   for (let r = 0; r < nRows; r++) {
     const rd = nvState.waterfallHistory[r];
-    const yBase = H - oY - r * 4;
-    const xShift = r * 1.5;
+    const yBase = H - oY - r * 3.8;
+    const xShift = r * 1.8;
     const alpha = 0.08 + (r / nRows) * 0.92;
 
-    // Filled polygon
+    // Filled polygon with selected band's color
     ctx.beginPath();
     ctx.moveTo(oX + xShift, yBase);
     for (let b = 0; b < nBins; b++) {
       const x = oX + xShift + b * binW;
-      const amp = Math.min(rd[b], 1.5) * 130;
+      const amp = Math.min(rd[b], 2) * 120;
       ctx.lineTo(x, yBase - amp);
     }
     ctx.lineTo(oX + xShift + (nBins - 1) * binW, yBase);
     ctx.closePath();
+
+    // Fill with selected band color
     ctx.fillStyle =
-      BAND_COLORS[2] +
+      bandColor +
       Math.floor(alpha * 18)
         .toString(16)
         .padStart(2, "0");
     ctx.fill();
 
-    // Line segments colored by band
+    // Line segments colored by frequency band (for reference)
     for (let b = 1; b < nBins; b++) {
       const freq = (b / nBins) * 60;
       const bi =
@@ -330,32 +337,42 @@ function updateWaterfallCanvas() {
       ctx.beginPath();
       ctx.moveTo(
         oX + xShift + (b - 1) * binW,
-        yBase - Math.min(rd[b - 1], 1.5) * 130,
+        yBase - Math.min(rd[b - 1], 2) * 120,
       );
-      ctx.lineTo(oX + xShift + b * binW, yBase - Math.min(rd[b], 1.5) * 130);
+      ctx.lineTo(oX + xShift + b * binW, yBase - Math.min(rd[b], 2) * 120);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
 
-  // Frequency axis
+  // Frequency axis labels (Hz)
   ctx.fillStyle = "#888";
   ctx.font = "9px monospace";
   [0, 4, 8, 13, 30, 60].forEach((f) => {
-    ctx.fillText(f + "Hz", oX + (f / 60) * (W - 120) - 6, H - 4);
+    ctx.fillText(f + "Hz", oX + (f / 60) * (W - 140) - 6, H - 4);
   });
-  // Band labels
-  ctx.font = "bold 9px monospace";
-  NV_RANGES.forEach((br, bi) => {
-    const x1 = oX + (br.lo / 60) * (W - 120);
-    ctx.fillStyle = NV_COLORS[bi] + "40";
-    ctx.fillRect(x1, 4, oX + (br.hi / 60) * (W - 120) - x1, 14);
-    ctx.fillStyle = NV_COLORS[bi];
-    ctx.fillText(NV_NAMES[bi], x1 + 2, 14);
+
+  // Band labels at top (colored by frequency band)
+  ctx.font = "bold 8px monospace";
+  [
+    { n: "Delta", lo: 0, hi: 4, i: 0 },
+    { n: "Theta", lo: 4, hi: 8, i: 1 },
+    { n: "Alpha", lo: 8, hi: 13, i: 2 },
+    { n: "Beta", lo: 13, hi: 30, i: 3 },
+    { n: "Gamma", lo: 30, hi: 60, i: 4 },
+  ].forEach((br) => {
+    const x1 = oX + (br.lo / 60) * (W - 140);
+    const x2 = oX + (br.hi / 60) * (W - 140);
+    ctx.fillStyle = NV_COLORS[br.i] + "30";
+    ctx.fillRect(x1, 8, x2 - x1, 12);
+    ctx.fillStyle = NV_COLORS[br.i];
+    ctx.fillText(br.n, x1 + 2, 14);
   });
+
+  // Axis labels
   ctx.fillStyle = "#888";
   ctx.font = "10px monospace";
-  ctx.fillText("← Time (rows)", W - 110, 18);
+  ctx.fillText("← Time (newer →)", W - 120, 18);
   ctx.fillText("Amplitude ↑", 2, 18);
 }
 
