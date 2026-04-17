@@ -4,15 +4,15 @@
  * Professional DSP pipeline with simulator, filters, and advanced controls
  */
 
-const express = require("express")
-const WebSocket = require("ws")
-const osc = require("osc")
-const { spawn } = require("child_process")
-const fs = require("fs")
-const path = require("path")
-require("dotenv").config()
+const express = require("express");
+const WebSocket = require("ws");
+const osc = require("osc");
+const { spawn } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+require("dotenv").config();
 
-const { DSPPipeline } = require("./dsp")
+const { DSPPipeline } = require("./dsp");
 
 // ============================================================================
 // Configuration
@@ -26,40 +26,42 @@ const config = {
   oscPrefix: process.env.OSC_PREFIX || "/muse",
   swiftBridgePath: process.env.BRIDGE_PATH || "./MuseBridge",
   maxBufferSize: 512,
-}
+};
 
 // Express app
-const app = express()
-app.use(express.static(path.join(__dirname, "public")))
-app.use(express.json())
+const app = express();
+app.use(express.static(path.join(__dirname, "public")));
+app.use(express.json());
 
 // WebSocket server
-const wss = new WebSocket.Server({ port: config.wsPort })
+const wss = new WebSocket.Server({ port: config.wsPort });
 
 wss.on("listening", () => {
-  console.log(`✓ WebSocket server listening on ws://localhost:${config.wsPort}`)
-})
+  console.log(
+    `✓ WebSocket server listening on ws://localhost:${config.wsPort}`,
+  );
+});
 
 wss.on("error", (err) => {
-  console.error(`❌ WebSocket server error: ${err.message}`)
-})
+  console.error(`❌ WebSocket server error: ${err.message}`);
+});
 
 // OSC port
-let oscPort = null
-let swiftProcess = null
-let csoundProcess = null // Track current Csound instrument
-let currentInstrument = null
+let oscPort = null;
+let swiftProcess = null;
+let csoundProcess = null; // Track current Csound instrument
+let currentInstrument = null;
 
-let connectedDevices = []
-let eegBuffer = [[], [], [], []]
+let connectedDevices = [];
+let eegBuffer = [[], [], [], []];
 let bandPowersBuffer = {
   absolute: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
   relative: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
-}
+};
 let currentBandPowers = {
   absolute: { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 },
   relative: { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 },
-}
+};
 
 // DSP Pipeline (initialized with default settings, will be updated dynamically)
 const dsp = new DSPPipeline({
@@ -71,7 +73,7 @@ const dsp = new DSPPipeline({
   smoothingAmount: 10,
   scaling: "0-1",
   outputRate: 256,
-})
+});
 
 // Settings state
 let settings = {
@@ -103,26 +105,26 @@ let settings = {
   oscOutputScaler: 1, // Multiplier for OSC values (1, 3, 10, 20, etc.)
   oscScaleMode: "normalize", // "normalize" (use scaler), "raw" (no scaling), "none"
   oscAllowNegative: true, // true = send -1 to +1, false = clamp to 0 to +1
-}
+};
 
-let recordedData = []
-let packetCount = 0
-let simulatorInterval = null
+let recordedData = [];
+let packetCount = 0;
+let simulatorInterval = null;
 
 // WebSocket throttle: 10 Hz = 100ms between broadcasts
-const WS_BROADCAST_RATE_HZ = 10
-const WS_BROADCAST_INTERVAL_MS = 1000 / WS_BROADCAST_RATE_HZ // 100ms
-let lastWSBroadcastTime = 0
+const WS_BROADCAST_RATE_HZ = 10;
+const WS_BROADCAST_INTERVAL_MS = 1000 / WS_BROADCAST_RATE_HZ; // 100ms
+let lastWSBroadcastTime = 0;
 
 // ============================================================================
 // Simulator (for testing without Muse)
 // ============================================================================
 
 function generateSimulatorData() {
-  if (!settings.simulatorMode) return null
+  if (!settings.simulatorMode) return null;
 
-  const time = Date.now() / 1000
-  const freq = settings.simulatorFreq
+  const time = Date.now() / 1000;
+  const freq = settings.simulatorFreq;
 
   // Generate synthetic EEG with multiple components
   return [
@@ -132,18 +134,18 @@ function generateSimulatorData() {
     Math.sin(2 * Math.PI * freq * 0.5 * time) * 40 + (Math.random() - 0.5) * 15,
     Math.sin(2 * Math.PI * freq * 1.5 * time) * 35 + (Math.random() - 0.5) * 18,
     Math.sin(2 * Math.PI * freq * 2 * time) * 45 + (Math.random() - 0.5) * 22,
-  ]
+  ];
 }
 
 function generateSimulatorBandPowers() {
-  if (!settings.simulatorMode) return null
+  if (!settings.simulatorMode) return null;
 
-  const time = Date.now() / 1000
+  const time = Date.now() / 1000;
 
   // Generate fake band powers that vary over time
   const oscillate = (freq, offset = 0) => {
-    return 0.5 + 0.4 * Math.sin(2 * Math.PI * freq * time + offset)
-  }
+    return 0.5 + 0.4 * Math.sin(2 * Math.PI * freq * time + offset);
+  };
 
   return {
     absolute: {
@@ -160,34 +162,40 @@ function generateSimulatorBandPowers() {
       beta: 0.25 + oscillate(0.7) * 0.15,
       gamma: 0.1 + oscillate(0.4) * 0.1,
     },
-  }
+  };
 }
 
 function generateSimulatorMotion(type) {
-  if (!settings.simulatorMode) return null
-  const time = Date.now() / 1000
+  if (!settings.simulatorMode) return null;
+  const time = Date.now() / 1000;
 
   if (type === "accel") {
     return [
       Math.sin(2 * Math.PI * 0.5 * time) * 0.3 + (Math.random() - 0.5) * 0.1,
       Math.sin(2 * Math.PI * 0.7 * time) * 0.3 + (Math.random() - 0.5) * 0.1,
       0.98 + Math.sin(2 * Math.PI * 0.3 * time) * 0.05, // Z ≈ gravity
-    ]
+    ];
   } else if (type === "gyro") {
     return [
       Math.sin(2 * Math.PI * 0.3 * time) * 5 + (Math.random() - 0.5) * 2,
       Math.cos(2 * Math.PI * 0.4 * time) * 5 + (Math.random() - 0.5) * 2,
       Math.sin(2 * Math.PI * 0.2 * time) * 5 + (Math.random() - 0.5) * 2,
-    ]
+    ];
   } else if (type === "ppg") {
     // Normalized to 0-1 range (simulating photoplethysmogram signal)
     return [
-      0.5 + Math.sin(2 * Math.PI * 1.3 * time) * 0.3 + (Math.random() - 0.5) * 0.1, // Red
-      0.5 + Math.sin(2 * Math.PI * 1.3 * time + 0.5) * 0.25 + (Math.random() - 0.5) * 0.08, // Green
-      0.5 + Math.sin(2 * Math.PI * 1.3 * time + 1) * 0.35 + (Math.random() - 0.5) * 0.1, // IR
-    ]
+      0.5 +
+        Math.sin(2 * Math.PI * 1.3 * time) * 0.3 +
+        (Math.random() - 0.5) * 0.1, // Red
+      0.5 +
+        Math.sin(2 * Math.PI * 1.3 * time + 0.5) * 0.25 +
+        (Math.random() - 0.5) * 0.08, // Green
+      0.5 +
+        Math.sin(2 * Math.PI * 1.3 * time + 1) * 0.35 +
+        (Math.random() - 0.5) * 0.1, // IR
+    ];
   }
-  return null
+  return null;
 }
 
 // ============================================================================
@@ -201,16 +209,16 @@ function initOSC() {
     remoteAddress: config.oscHost,
     remotePort: config.oscPort, // Send to 7400 (standard for Max/MSP, Csound)
     metadata: true,
-  })
+  });
 
-  oscPort.open()
-  console.log(`✓ OSC client ready → ${config.oscHost}:${config.oscPort}`)
-  console.log(`✓ OSC prefix: ${settings.oscPrefix}`)
-  console.log(`💡 Csound/Max listen on port ${config.oscPort}`)
+  oscPort.open();
+  console.log(`✓ OSC client ready → ${config.oscHost}:${config.oscPort}`);
+  console.log(`✓ OSC prefix: ${settings.oscPrefix}`);
+  console.log(`💡 Csound/Max listen on port ${config.oscPort}`);
 
   oscPort.on("error", (err) => {
-    console.error("❌ OSC Error:", err.message)
-  })
+    console.error("❌ OSC Error:", err.message);
+  });
 }
 
 // ============================================================================
@@ -218,61 +226,61 @@ function initOSC() {
 // ============================================================================
 
 function launchSwiftBridge() {
-  console.log(`🚀 Launching Swift bridge: ${config.swiftBridgePath}`)
+  console.log(`🚀 Launching Swift bridge: ${config.swiftBridgePath}`);
 
   swiftProcess = spawn(config.swiftBridgePath, [], {
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
-  })
+  });
 
-  let buffer = ""
+  let buffer = "";
 
   swiftProcess.stdout.on("data", (data) => {
-    buffer += data.toString()
-    const lines = buffer.split("\n")
-    buffer = lines.pop()
+    buffer += data.toString();
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
 
     lines.forEach((line) => {
-      if (line.trim().length === 0) return
+      if (line.trim().length === 0) return;
 
       try {
-        const packet = JSON.parse(line)
+        const packet = JSON.parse(line);
 
         if (packet.type === "eeg") {
-          handleEEGPacket(packet)
+          handleEEGPacket(packet);
         } else if (packet.type === "bandPowers") {
-          handleBandPowersPacket(packet)
+          handleBandPowersPacket(packet);
         } else if (packet.type === "device_list") {
-          handleDeviceList(packet)
+          handleDeviceList(packet);
         } else if (packet.type === "status") {
-          handleStatus(packet)
+          handleStatus(packet);
         } else if (packet.type === "accelerometer") {
-          handleAccelerometerPacket(packet)
+          handleAccelerometerPacket(packet);
         } else if (packet.type === "gyroscope") {
-          handleGyroscopePacket(packet)
+          handleGyroscopePacket(packet);
         } else if (packet.type === "ppg") {
-          handlePPGPacket(packet)
+          handlePPGPacket(packet);
         } else if (packet.type === "battery") {
-          handleBatteryPacket(packet)
+          handleBatteryPacket(packet);
         }
       } catch (e) {
-        console.log("[SWIFT]", line)
+        console.log("[SWIFT]", line);
       }
-    })
-  })
+    });
+  });
 
   swiftProcess.stderr.on("data", (data) => {
-    console.error("[SWIFT ERROR]", data.toString().trim())
-  })
+    console.error("[SWIFT ERROR]", data.toString().trim());
+  });
 
   swiftProcess.on("close", (code) => {
-    console.log(`⚠️  Swift bridge exited with code ${code}`)
-    setTimeout(() => launchSwiftBridge(), 2000)
-  })
+    console.log(`⚠️  Swift bridge exited with code ${code}`);
+    setTimeout(() => launchSwiftBridge(), 2000);
+  });
 
   swiftProcess.on("error", (err) => {
-    console.error("❌ Failed to launch Swift bridge:", err.message)
-  })
+    console.error("❌ Failed to launch Swift bridge:", err.message);
+  });
 }
 
 // ============================================================================
@@ -282,11 +290,11 @@ function launchSwiftBridge() {
 function broadcastEEGData(eeg, processed, packet = {}) {
   // Buffer for visualization
   eeg.forEach((value, ch) => {
-    eegBuffer[ch].push(value)
+    eegBuffer[ch].push(value);
     if (eegBuffer[ch].length > config.maxBufferSize) {
-      eegBuffer[ch].shift()
+      eegBuffer[ch].shift();
     }
-  })
+  });
 
   // Record data if enabled
   if (settings.recordingEnabled) {
@@ -295,20 +303,20 @@ function broadcastEEGData(eeg, processed, packet = {}) {
       raw: eeg,
       processed: processed.processed,
       stats: processed.stats,
-    })
+    });
   }
 
   // Send OSC to Csound IMMEDIATELY at 256 Hz (not throttled) if enabled
   if (settings.oscStreams.rawEEG) {
-    sendOSCtoCSsound(processed.processed)
+    sendOSCtoCSsound(processed.processed);
   }
 
   // Throttle WebSocket broadcasts to 10 Hz (100ms interval)
-  const now = Date.now()
+  const now = Date.now();
   if (now - lastWSBroadcastTime < WS_BROADCAST_INTERVAL_MS) {
-    return // Skip this broadcast, not enough time has passed
+    return; // Skip this broadcast, not enough time has passed
   }
-  lastWSBroadcastTime = now
+  lastWSBroadcastTime = now;
 
   // Broadcast to WebSocket clients (10 Hz rate)
   const payload = {
@@ -318,71 +326,72 @@ function broadcastEEGData(eeg, processed, packet = {}) {
     processed: processed.processed,
     stats: processed.stats,
     fft: processed.fft,
-    deviceName: packet.deviceName || (settings.simulatorMode ? "SIMULATOR" : "Unknown"),
+    deviceName:
+      packet.deviceName || (settings.simulatorMode ? "SIMULATOR" : "Unknown"),
     packetCount,
-  }
+  };
 
-  let sent = 0
+  let sent = 0;
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       try {
-        client.send(JSON.stringify(payload))
-        sent++
+        client.send(JSON.stringify(payload));
+        sent++;
       } catch (e) {
-        console.error("Send error:", e.message)
+        console.error("Send error:", e.message);
       }
     }
-  })
+  });
 }
 
 function handleEEGPacket(packet) {
   // Get EEG data (simulator or real)
-  let eeg = settings.simulatorMode ? generateSimulatorData() : packet.eeg
+  let eeg = settings.simulatorMode ? generateSimulatorData() : packet.eeg;
 
-  if (!eeg) return
+  if (!eeg) return;
 
-  packetCount++
+  packetCount++;
 
   // Process through DSP pipeline
-  const processed = dsp.process(eeg)
+  const processed = dsp.process(eeg);
 
   // Broadcast data
-  broadcastEEGData(eeg, processed, packet)
+  broadcastEEGData(eeg, processed, packet);
 }
 
 function handleBandPowersPacket(packet) {
   // Store band powers (10 Hz rate from Muse)
-  if (!packet.absolute || !packet.relative) return
+  if (!packet.absolute || !packet.relative) return;
 
-  packetCount++
+  packetCount++;
 
   // Store current band powers
-  currentBandPowers.absolute = packet.absolute
-  currentBandPowers.relative = packet.relative
+  currentBandPowers.absolute = packet.absolute;
+  currentBandPowers.relative = packet.relative;
 
   // Buffer for visualization
   Object.keys(packet.absolute).forEach((band) => {
-    bandPowersBuffer.absolute[band].push(packet.absolute[band])
-    bandPowersBuffer.relative[band].push(packet.relative[band])
+    bandPowersBuffer.absolute[band].push(packet.absolute[band]);
+    bandPowersBuffer.relative[band].push(packet.relative[band]);
 
     if (bandPowersBuffer.absolute[band].length > config.maxBufferSize) {
-      bandPowersBuffer.absolute[band].shift()
-      bandPowersBuffer.relative[band].shift()
+      bandPowersBuffer.absolute[band].shift();
+      bandPowersBuffer.relative[band].shift();
     }
-  })
+  });
 
   // Send via OSC if enabled
   if (settings.oscStreams.bandAbsolute || settings.oscStreams.bandRelative) {
-    sendBandPowersOSC(packet.absolute, packet.relative)
+    sendBandPowersOSC(packet.absolute, packet.relative);
   }
 
   // Broadcast to WebSocket (throttled to 10 Hz)
-  broadcastBandPowers(packet.absolute, packet.relative)
+  broadcastBandPowers(packet.absolute, packet.relative);
 }
 
 function handleDeviceList(packet) {
-  connectedDevices = packet.devices || []
-  console.log(`📱 Devices found: ${connectedDevices.length}`)
+  connectedDevices = packet.devices || [];
+  console.log(`📱 Devices found: ${connectedDevices.length}`);
 
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
@@ -391,69 +400,69 @@ function handleDeviceList(packet) {
           type: "device_list",
           devices: connectedDevices,
         }),
-      )
+      );
     }
-  })
+  });
 }
 
 function handleStatus(packet) {
-  console.log(`[STATUS] ${packet.message}`)
+  console.log(`[STATUS] ${packet.message}`);
 
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(packet))
+      client.send(JSON.stringify(packet));
     }
-  })
+  });
 }
 
 function handleAccelerometerPacket(packet) {
-  if (!packet.accel || packet.accel.length !== 3) return
+  if (!packet.accel || packet.accel.length !== 3) return;
 
-  packetCount++
+  packetCount++;
 
   // Send via OSC if enabled
   if (settings.oscStreams.motionAccel) {
-    sendMotionOSC("/muse/acc", packet.accel)
+    sendMotionOSC("/muse/acc", packet.accel);
   }
 
   // Broadcast to WebSocket
-  broadcastMotionData("accel", packet.accel)
+  broadcastMotionData("accel", packet.accel);
 }
 
 function handleGyroscopePacket(packet) {
-  if (!packet.gyro || packet.gyro.length !== 3) return
+  if (!packet.gyro || packet.gyro.length !== 3) return;
 
-  packetCount++
+  packetCount++;
 
   // Send via OSC if enabled
   if (settings.oscStreams.motionGyro) {
-    sendMotionOSC("/muse/gyro", packet.gyro)
+    sendMotionOSC("/muse/gyro", packet.gyro);
   }
 
   // Broadcast to WebSocket
-  broadcastMotionData("gyro", packet.gyro)
+  broadcastMotionData("gyro", packet.gyro);
 }
 
 function handlePPGPacket(packet) {
-  if (!packet.ppg || packet.ppg.length !== 3) return
+  if (!packet.ppg || packet.ppg.length !== 3) return;
 
-  packetCount++
+  packetCount++;
 
   // Send via OSC if enabled
   if (settings.oscStreams.motionPPG) {
-    sendMotionOSC("/muse/ppg", packet.ppg)
+    sendMotionOSC("/muse/ppg", packet.ppg);
   }
 
   // Broadcast to WebSocket
-  broadcastMotionData("ppg", packet.ppg)
+  broadcastMotionData("ppg", packet.ppg);
 }
 
 function handleBatteryPacket(packet) {
   if (packet.percentage !== undefined) {
-    packetCount++
+    packetCount++;
 
     // Broadcast battery level to WebSocket
-    broadcastBatteryLevel(packet.percentage)
+    broadcastBatteryLevel(packet.percentage);
   }
 }
 
@@ -462,19 +471,19 @@ function handleBatteryPacket(packet) {
 // ============================================================================
 
 function sendOSCtoCSsound(eeg) {
-  if (!oscPort) return
+  if (!oscPort) return;
 
   try {
     // Apply post-OSC scaling
-    let scaledEeg = eeg
+    let scaledEeg = eeg;
     if (settings.oscScaleMode === "normalize") {
-      scaledEeg = eeg.map((v) => v * settings.oscOutputScaler)
+      scaledEeg = eeg.map((v) => v * settings.oscOutputScaler);
     }
     // "raw" and "none" modes skip scaling
 
     // Apply positive-only clipping if needed
     if (!settings.oscAllowNegative) {
-      scaledEeg = scaledEeg.map((v) => Math.max(0, v))
+      scaledEeg = scaledEeg.map((v) => Math.max(0, v));
     }
 
     // Main address with 4 channels
@@ -486,30 +495,30 @@ function sendOSCtoCSsound(eeg) {
         { type: "f", value: scaledEeg[2] },
         { type: "f", value: scaledEeg[3] },
       ],
-    })
+    });
 
     // Per-channel addresses
-    const channels = ["eeg1", "eeg2", "eeg3", "eeg4"]
+    const channels = ["eeg1", "eeg2", "eeg3", "eeg4"];
     channels.forEach((ch, i) => {
       oscPort.send({
         address: `${settings.oscPrefix}/${ch}`,
         args: [{ type: "f", value: scaledEeg[i] }],
-      })
-    })
+      });
+    });
 
     if (packetCount % 256 === 0) {
-      console.log(`🎵 OSC: ${packetCount} packets sent to Csound`)
+      console.log(`🎵 OSC: ${packetCount} packets sent to Csound`);
     }
   } catch (e) {
-    console.error("OSC error:", e.message)
+    console.error("OSC error:", e.message);
   }
 }
 
 function sendBandPowersOSC(absolute, relative) {
-  if (!oscPort) return
+  if (!oscPort) return;
 
   try {
-    const bands = ["delta", "theta", "alpha", "beta", "gamma"]
+    const bands = ["delta", "theta", "alpha", "beta", "gamma"];
 
     // Send absolute band powers (log scale)
     if (settings.oscStreams.bandAbsolute) {
@@ -519,15 +528,15 @@ function sendBandPowersOSC(absolute, relative) {
           type: "f",
           value: absolute[band] || 0,
         })),
-      })
+      });
 
       // Per-band addresses
       bands.forEach((band) => {
         oscPort.send({
           address: `${settings.oscPrefix}/bands/absolute/${band}`,
           args: [{ type: "f", value: absolute[band] || 0 }],
-        })
-      })
+        });
+      });
     }
 
     // Send relative band powers (0-1 normalized)
@@ -538,23 +547,23 @@ function sendBandPowersOSC(absolute, relative) {
           type: "f",
           value: relative[band] || 0,
         })),
-      })
+      });
 
       // Per-band addresses
       bands.forEach((band) => {
         oscPort.send({
           address: `${settings.oscPrefix}/bands/relative/${band}`,
           args: [{ type: "f", value: relative[band] || 0 }],
-        })
-      })
+        });
+      });
     }
   } catch (e) {
-    console.error("Band Powers OSC error:", e.message)
+    console.error("Band Powers OSC error:", e.message);
   }
 }
 
 function sendMotionOSC(address, values) {
-  if (!oscPort || !values || values.length === 0) return
+  if (!oscPort || !values || values.length === 0) return;
 
   try {
     oscPort.send({
@@ -563,21 +572,24 @@ function sendMotionOSC(address, values) {
         type: "f",
         value: val,
       })),
-    })
+    });
   } catch (e) {
-    console.error(`Motion OSC error (${address}):`, e.message)
+    console.error(`Motion OSC error (${address}):`, e.message);
   }
 }
 
-let lastBandPowersBroadcast = 0
+let lastBandPowersBroadcast = 0;
 function broadcastBandPowers(absolute, relative) {
-  const now = Date.now()
+  const now = Date.now();
+
+  // Update calibration if in progress
+  updateCalibrationBaseline(relative);
 
   // Throttle to WS rate (10 Hz = 100ms)
   if (now - lastBandPowersBroadcast < WS_BROADCAST_INTERVAL_MS) {
-    return
+    return;
   }
-  lastBandPowersBroadcast = now
+  lastBandPowersBroadcast = now;
 
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
@@ -587,20 +599,20 @@ function broadcastBandPowers(absolute, relative) {
           absolute,
           relative,
         }),
-      )
+      );
     }
-  })
+  });
 }
 
-let lastMotionBroadcast = { accel: 0, gyro: 0, ppg: 0 }
+let lastMotionBroadcast = { accel: 0, gyro: 0, ppg: 0 };
 function broadcastMotionData(sensorType, values) {
-  const now = Date.now()
+  const now = Date.now();
 
   // Throttle per sensor type to WS rate (10 Hz = 100ms)
   if (now - lastMotionBroadcast[sensorType] < WS_BROADCAST_INTERVAL_MS) {
-    return
+    return;
   }
-  lastMotionBroadcast[sensorType] = now
+  lastMotionBroadcast[sensorType] = now;
 
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
@@ -610,9 +622,9 @@ function broadcastMotionData(sensorType, values) {
           sensor: sensorType,
           values: values,
         }),
-      )
+      );
     }
-  })
+  });
 }
 
 function broadcastBatteryLevel(percentage) {
@@ -623,9 +635,9 @@ function broadcastBatteryLevel(percentage) {
           type: "battery",
           percentage: percentage,
         }),
-      )
+      );
     }
-  })
+  });
 }
 
 // ============================================================================
@@ -633,7 +645,7 @@ function broadcastBatteryLevel(percentage) {
 // ============================================================================
 
 wss.on("connection", (ws) => {
-  console.log("🔗 WebSocket client connected")
+  console.log("🔗 WebSocket client connected");
 
   ws.send(
     JSON.stringify({
@@ -646,25 +658,25 @@ wss.on("connection", (ws) => {
       devices: connectedDevices,
       eegBuffer,
     }),
-  )
+  );
 
   ws.on("message", (data) => {
     try {
-      const msg = JSON.parse(data)
-      handleWebSocketMessage(msg, ws)
+      const msg = JSON.parse(data);
+      handleWebSocketMessage(msg, ws);
     } catch (e) {
-      console.error("WebSocket message error:", e.message)
+      console.error("WebSocket message error:", e.message);
     }
-  })
+  });
 
   ws.on("close", () => {
-    console.log("🔌 WebSocket client disconnected")
-  })
+    console.log("🔌 WebSocket client disconnected");
+  });
 
   ws.on("error", (err) => {
-    console.error("WebSocket error:", err.message)
-  })
-})
+    console.error("WebSocket error:", err.message);
+  });
+});
 
 function handleWebSocketMessage(msg, ws) {
   switch (msg.type) {
@@ -675,9 +687,9 @@ function handleWebSocketMessage(msg, ws) {
             command: "connect",
             deviceIndex: msg.deviceIndex,
           }) + "\n",
-        )
+        );
       }
-      break
+      break;
 
     case "disconnect_device":
       if (swiftProcess && swiftProcess.stdin) {
@@ -685,157 +697,168 @@ function handleWebSocketMessage(msg, ws) {
           JSON.stringify({
             command: "disconnect",
           }) + "\n",
-        )
+        );
       }
-      break
+      break;
 
     case "update_settings":
-      updateSettings(msg.settings)
-      broadcastSettings()
-      break
+      updateSettings(msg.settings);
+      broadcastSettings();
+      break;
 
     case "toggle_simulator":
-      settings.simulatorMode = !settings.simulatorMode
-      console.log(`🎲 Simulator mode: ${settings.simulatorMode ? "ON" : "OFF"}`)
+      settings.simulatorMode = !settings.simulatorMode;
+      console.log(
+        `🎲 Simulator mode: ${settings.simulatorMode ? "ON" : "OFF"}`,
+      );
 
       if (settings.simulatorMode) {
         // Start simulator loop
-        let simCount = 0
-        let bandPowerCount = 0
-        let motionCount = 0
+        let simCount = 0;
+        let bandPowerCount = 0;
+        let motionCount = 0;
         simulatorInterval = setInterval(() => {
-          const eeg = generateSimulatorData()
+          const eeg = generateSimulatorData();
           if (eeg) {
-            packetCount++
-            simCount++
-            const processed = dsp.process(eeg)
-            broadcastEEGData(eeg, processed)
-            if (simCount === 1) console.log(`📊 Simulator streaming: ${packetCount} total packets`)
+            packetCount++;
+            simCount++;
+            const processed = dsp.process(eeg);
+            broadcastEEGData(eeg, processed);
+            if (simCount === 1)
+              console.log(
+                `📊 Simulator streaming: ${packetCount} total packets`,
+              );
           }
 
           // Broadcast band powers at 10 Hz (every 25.6 samples @ 256 Hz)
-          bandPowerCount++
+          bandPowerCount++;
           if (bandPowerCount >= 26) {
-            const bandPowers = generateSimulatorBandPowers()
+            const bandPowers = generateSimulatorBandPowers();
             if (bandPowers) {
               if (simCount === 26)
-                console.log(`📊 Broadcasting band powers (alpha: ${bandPowers.relative.alpha.toFixed(3)})`)
-              broadcastBandPowers(bandPowers.absolute, bandPowers.relative)
+                console.log(
+                  `📊 Broadcasting band powers (alpha: ${bandPowers.relative.alpha.toFixed(3)})`,
+                );
+              broadcastBandPowers(bandPowers.absolute, bandPowers.relative);
             }
-            bandPowerCount = 0
+            bandPowerCount = 0;
           }
 
           // Broadcast motion data at 10 Hz
-          motionCount++
+          motionCount++;
           if (motionCount >= 26) {
-            const accel = generateSimulatorMotion("accel")
-            const gyro = generateSimulatorMotion("gyro")
-            const ppg = generateSimulatorMotion("ppg")
+            const accel = generateSimulatorMotion("accel");
+            const gyro = generateSimulatorMotion("gyro");
+            const ppg = generateSimulatorMotion("ppg");
 
             console.log(
               `💨 Sending motion to ${wss.clients.size} clients: accel=[${accel}], gyro=[${gyro}], ppg=[${ppg}]`,
-            )
-            if (accel) broadcastMotionData("accel", accel)
-            if (gyro) broadcastMotionData("gyro", gyro)
-            if (ppg) broadcastMotionData("ppg", ppg)
+            );
+            if (accel) broadcastMotionData("accel", accel);
+            if (gyro) broadcastMotionData("gyro", gyro);
+            if (ppg) broadcastMotionData("ppg", ppg);
 
-            motionCount = 0
+            motionCount = 0;
           }
-        }, 1000 / 256) // 256 Hz (Muse sample rate)
+        }, 1000 / 256); // 256 Hz (Muse sample rate)
       } else {
         // Stop simulator loop
         if (simulatorInterval) {
-          clearInterval(simulatorInterval)
-          simulatorInterval = null
+          clearInterval(simulatorInterval);
+          simulatorInterval = null;
         }
       }
-      broadcastSettings()
-      break
+      broadcastSettings();
+      break;
 
     case "update_settings":
       if (msg.oscOutputScaler !== undefined) {
-        settings.oscOutputScaler = msg.oscOutputScaler
-        console.log(`📊 OSC Output Scaler: ${msg.oscOutputScaler}`)
+        settings.oscOutputScaler = msg.oscOutputScaler;
+        console.log(`📊 OSC Output Scaler: ${msg.oscOutputScaler}`);
       }
       if (msg.oscScaleMode !== undefined) {
-        settings.oscScaleMode = msg.oscScaleMode
-        console.log(`📊 OSC Scale Mode: ${msg.oscScaleMode}`)
+        settings.oscScaleMode = msg.oscScaleMode;
+        console.log(`📊 OSC Scale Mode: ${msg.oscScaleMode}`);
       }
       if (msg.oscAllowNegative !== undefined) {
-        settings.oscAllowNegative = msg.oscAllowNegative
-        console.log(`📊 OSC Allow Negative: ${msg.oscAllowNegative ? "YES (-1 to +1)" : "NO (0 to +1 only)"}`)
+        settings.oscAllowNegative = msg.oscAllowNegative;
+        console.log(
+          `📊 OSC Allow Negative: ${msg.oscAllowNegative ? "YES (-1 to +1)" : "NO (0 to +1 only)"}`,
+        );
       }
-      broadcastSettings()
-      break
+      broadcastSettings();
+      break;
 
     case "start_recording":
-      settings.recordingEnabled = true
-      recordedData = []
-      console.log("📝 Recording started")
-      break
+      settings.recordingEnabled = true;
+      recordedData = [];
+      console.log("📝 Recording started");
+      break;
 
     case "stop_recording":
-      settings.recordingEnabled = false
-      console.log(`📝 Recording stopped (${recordedData.length} samples)`)
+      settings.recordingEnabled = false;
+      console.log(`📝 Recording stopped (${recordedData.length} samples)`);
       ws.send(
         JSON.stringify({
           type: "recording_complete",
           data: recordedData,
         }),
-      )
-      break
+      );
+      break;
 
     case "update_dsp_setting":
       if (msg.setting && msg.value !== undefined) {
         if (msg.setting === "all") {
           // Update multiple settings at once (from preset)
-          Object.assign(settings, msg.value)
-          dsp.updateConfig(msg.value)
-          console.log(`⚙️  DSP preset applied:`, JSON.stringify(msg.value))
+          Object.assign(settings, msg.value);
+          dsp.updateConfig(msg.value);
+          console.log(`⚙️  DSP preset applied:`, JSON.stringify(msg.value));
         } else {
           // Update individual setting
-          settings[msg.setting] = msg.value
+          settings[msg.setting] = msg.value;
           // Handle legacy 'scaling' key -> map to 'scalingMode'
           if (msg.setting === "scaling") {
-            settings.scalingMode = msg.value
+            settings.scalingMode = msg.value;
           }
           // Handle legacy 'scalingMode' -> pass to DSP as well
-          const dspUpdateObj = { [msg.setting]: msg.value }
+          const dspUpdateObj = { [msg.setting]: msg.value };
           if (msg.setting === "scalingMode") {
-            dspUpdateObj.scalingMode = msg.value
+            dspUpdateObj.scalingMode = msg.value;
           }
-          dsp.updateConfig(dspUpdateObj)
+          dsp.updateConfig(dspUpdateObj);
           console.log(
             `⚙️  DSP setting updated: ${msg.setting} = ${msg.value} (scalingMode in settings: ${settings.scalingMode})`,
-          )
+          );
         }
         // Broadcast updated settings to all clients
-        broadcastSettings()
+        broadcastSettings();
       }
-      break
+      break;
 
     case "update_osc_stream":
       if (msg.stream && msg.enabled !== undefined) {
-        settings.oscStreams[msg.stream] = msg.enabled
-        console.log(`📡 OSC Stream '${msg.stream}': ${msg.enabled ? "ENABLED" : "DISABLED"}`)
-        broadcastSettings()
+        settings.oscStreams[msg.stream] = msg.enabled;
+        console.log(
+          `📡 OSC Stream '${msg.stream}': ${msg.enabled ? "ENABLED" : "DISABLED"}`,
+        );
+        broadcastSettings();
       }
-      break
+      break;
 
     case "osc_test":
-      sendOSCtoCSsound([0.1, 0.2, 0.3, 0.4])
-      ws.send(JSON.stringify({ type: "osc_test", status: "sent" }))
-      break
+      sendOSCtoCSsound([0.1, 0.2, 0.3, 0.4]);
+      ws.send(JSON.stringify({ type: "osc_test", status: "sent" }));
+      break;
 
     default:
-      console.log("Unknown WebSocket message type:", msg.type)
+      console.log("Unknown WebSocket message type:", msg.type);
   }
 }
 
 function updateSettings(newSettings) {
-  Object.assign(settings, newSettings)
-  dsp.updateConfig(newSettings)
-  console.log("⚙️  Settings updated:", newSettings)
+  Object.assign(settings, newSettings);
+  dsp.updateConfig(newSettings);
+  console.log("⚙️  Settings updated:", newSettings);
 }
 
 function broadcastSettings() {
@@ -846,9 +869,9 @@ function broadcastSettings() {
           type: "settings_updated",
           settings,
         }),
-      )
+      );
     }
-  })
+  });
 }
 
 // ============================================================================
@@ -864,72 +887,212 @@ app.get("/api/status", (req, res) => {
     simulator_mode: settings.simulatorMode,
     packet_count: packetCount,
     config,
-  })
-})
+  });
+});
 
 app.get("/api/devices", (req, res) => {
-  res.json({ devices: connectedDevices })
-})
+  res.json({ devices: connectedDevices });
+});
 
 app.get("/api/settings", (req, res) => {
-  res.json(settings)
-})
+  res.json(settings);
+});
 
 app.post("/api/settings", (req, res) => {
-  updateSettings(req.body)
-  broadcastSettings()
-  res.json({ status: "updated", settings })
-})
+  updateSettings(req.body);
+  broadcastSettings();
+  res.json({ status: "updated", settings });
+});
 
 app.post("/api/connect/:index", (req, res) => {
-  const index = parseInt(req.params.index)
+  const index = parseInt(req.params.index);
   if (swiftProcess && swiftProcess.stdin) {
     swiftProcess.stdin.write(
       JSON.stringify({
         command: "connect",
         deviceIndex: index,
       }) + "\n",
-    )
-    res.json({ status: "connecting" })
+    );
+    res.json({ status: "connecting" });
   } else {
-    res.status(500).json({ error: "Swift bridge not running" })
+    res.status(500).json({ error: "Swift bridge not running" });
   }
-})
+});
 
 app.post("/api/simulator/toggle", (req, res) => {
-  settings.simulatorMode = !settings.simulatorMode
-  broadcastSettings()
-  res.json({ simulator_mode: settings.simulatorMode })
-})
+  settings.simulatorMode = !settings.simulatorMode;
+  broadcastSettings();
+  res.json({ simulator_mode: settings.simulatorMode });
+});
 
 app.post("/api/recording/start", (req, res) => {
-  settings.recordingEnabled = true
-  recordedData = []
-  res.json({ status: "recording" })
-})
+  settings.recordingEnabled = true;
+  recordedData = [];
+  res.json({ status: "recording" });
+});
 
 app.post("/api/recording/stop", (req, res) => {
-  settings.recordingEnabled = false
-  res.json({ status: "stopped", samples: recordedData.length })
-})
+  settings.recordingEnabled = false;
+  res.json({ status: "stopped", samples: recordedData.length });
+});
 
 app.get("/api/recording/download", (req, res) => {
-  const csv = convertToCSV(recordedData)
-  res.setHeader("Content-Type", "text/csv")
-  res.setHeader("Content-Disposition", 'attachment; filename="eeg-data.csv"')
-  res.send(csv)
-})
+  const csv = convertToCSV(recordedData);
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", 'attachment; filename="eeg-data.csv"');
+  res.send(csv);
+});
+
+// ── Calibration Endpoints ──
+let calibrationState = {
+  isCalibrating: false,
+  startTime: null,
+  duration: 90000, // 90 seconds in ms
+  samplesCollected: 0,
+  baseline: {
+    delta: { mean: 0, m2: 0, n: 0 },
+    theta: { mean: 0, m2: 0, n: 0 },
+    alpha: { mean: 0, m2: 0, n: 0 },
+    beta: { mean: 0, m2: 0, n: 0 },
+    gamma: { mean: 0, m2: 0, n: 0 },
+  },
+  zscores: {
+    delta: 0,
+    theta: 0,
+    alpha: 0,
+    beta: 0,
+    gamma: 0,
+  },
+};
+
+app.post("/api/calibration/start", (req, res) => {
+  console.log("🔄 Starting calibration (90 seconds)...");
+  calibrationState.isCalibrating = true;
+  calibrationState.startTime = Date.now();
+  calibrationState.samplesCollected = 0;
+  // Reset baseline accumulators
+  for (let band of ["delta", "theta", "alpha", "beta", "gamma"]) {
+    calibrationState.baseline[band] = { mean: 0, m2: 0, n: 0 };
+  }
+  broadcastCalibrationStatus();
+  res.json({ status: "calibrating", duration: 90 });
+});
+
+app.post("/api/calibration/stop", (req, res) => {
+  console.log("⏹️ Stopping calibration");
+  calibrationState.isCalibrating = false;
+  // Calculate z-scores from baseline
+  calculateZScores();
+  broadcastCalibrationStatus();
+  res.json({ status: "stopped", samples: calibrationState.samplesCollected });
+});
+
+app.post("/api/calibration/reset", (req, res) => {
+  console.log("🔃 Resetting calibration");
+  calibrationState = {
+    isCalibrating: false,
+    startTime: null,
+    duration: 90000,
+    samplesCollected: 0,
+    baseline: {
+      delta: { mean: 0, m2: 0, n: 0 },
+      theta: { mean: 0, m2: 0, n: 0 },
+      alpha: { mean: 0, m2: 0, n: 0 },
+      beta: { mean: 0, m2: 0, n: 0 },
+      gamma: { mean: 0, m2: 0, n: 0 },
+    },
+    zscores: {
+      delta: 0,
+      theta: 0,
+      alpha: 0,
+      beta: 0,
+      gamma: 0,
+    },
+  };
+  broadcastCalibrationStatus();
+  res.json({ status: "reset" });
+});
+
+app.get("/api/calibration/status", (req, res) => {
+  const progress = calibrationState.isCalibrating
+    ? (Date.now() - calibrationState.startTime) / calibrationState.duration
+    : 0;
+  res.json({
+    isCalibrating: calibrationState.isCalibrating,
+    progress: Math.min(progress, 1),
+    samplesCollected: calibrationState.samplesCollected,
+    zscores: calibrationState.zscores,
+  });
+});
+
+function updateCalibrationBaseline(bandPowers) {
+  if (!calibrationState.isCalibrating) return;
+
+  const elapsed = Date.now() - calibrationState.startTime;
+  if (elapsed > calibrationState.duration) {
+    calibrationState.isCalibrating = false;
+    calculateZScores();
+    console.log("✅ Calibration complete!");
+    broadcastCalibrationStatus();
+    return;
+  }
+
+  // Welford's online algorithm for each band
+  for (let band of ["delta", "theta", "alpha", "beta", "gamma"]) {
+    const value = bandPowers[band] || 0;
+    const acc = calibrationState.baseline[band];
+    acc.n++;
+    const delta = value - acc.mean;
+    acc.mean += delta / acc.n;
+    const delta2 = value - acc.mean;
+    acc.m2 += delta * delta2;
+  }
+
+  calibrationState.samplesCollected++;
+}
+
+function calculateZScores() {
+  for (let band of ["delta", "theta", "alpha", "beta", "gamma"]) {
+    const acc = calibrationState.baseline[band];
+    const variance = acc.n > 1 ? acc.m2 / (acc.n - 1) : 0;
+    const stddev = Math.sqrt(variance);
+    // Store stddev for z-score calculation
+    calibrationState.baseline[band].stddev = stddev || 0.001;
+  }
+  console.log("📊 Z-scores calculated:", calibrationState.zscores);
+}
+
+function broadcastCalibrationStatus() {
+  const progress = calibrationState.isCalibrating
+    ? (Date.now() - calibrationState.startTime) / calibrationState.duration
+    : 0;
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(
+        JSON.stringify({
+          type: "calibration_status",
+          isCalibrating: calibrationState.isCalibrating,
+          progress: Math.min(progress, 1),
+          samplesCollected: calibrationState.samplesCollected,
+          baseline: calibrationState.baseline,
+        }),
+      );
+    }
+  });
+}
 
 function convertToCSV(data) {
-  if (data.length === 0) return "No data"
+  if (data.length === 0) return "No data";
 
-  let csv = "timestamp,eeg1_raw,eeg2_raw,eeg3_raw,eeg4_raw,eeg1_proc,eeg2_proc,eeg3_proc,eeg4_proc\n"
+  let csv =
+    "timestamp,eeg1_raw,eeg2_raw,eeg3_raw,eeg4_raw,eeg1_proc,eeg2_proc,eeg3_proc,eeg4_proc\n";
 
   data.forEach((row) => {
-    csv += `${row.timestamp},${row.raw.join(",")},${row.processed.join(",")}\n`
-  })
+    csv += `${row.timestamp},${row.raw.join(",")},${row.processed.join(",")}\n`;
+  });
 
-  return csv
+  return csv;
 }
 
 // ============================================================================
@@ -939,13 +1102,13 @@ function convertToCSV(data) {
 // List available instruments
 app.get("/api/instruments", (req, res) => {
   try {
-    const examplesDir = path.join(__dirname, "examples")
-    const files = fs.readdirSync(examplesDir)
+    const examplesDir = path.join(__dirname, "examples");
+    const files = fs.readdirSync(examplesDir);
 
     const instruments = files
       .filter((f) => f.startsWith("eeg_synth_") && f.endsWith(".csd"))
       .map((f) => {
-        const name = f.replace("eeg_synth_", "").replace(".csd", "")
+        const name = f.replace("eeg_synth_", "").replace(".csd", "");
         return {
           id: name,
           filename: f,
@@ -954,36 +1117,36 @@ app.get("/api/instruments", (req, res) => {
             .split("_")
             .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
             .join(" "),
-        }
+        };
       })
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({
       instruments,
       current: currentInstrument,
       running: csoundProcess && !csoundProcess.killed,
-    })
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: err.message });
   }
-})
+});
 
 // Launch an instrument
 app.post("/api/instruments/launch", (req, res) => {
-  const { id, mode } = req.body
+  const { id, mode } = req.body;
 
   if (!id) {
-    return res.status(400).json({ error: "Missing instrument id" })
+    return res.status(400).json({ error: "Missing instrument id" });
   }
 
-  const launchMode = mode || "headless" // Default to headless
+  const launchMode = mode || "headless"; // Default to headless
 
-  const examplesDir = path.join(__dirname, "examples")
-  const csdPath = path.join(examplesDir, `eeg_synth_${id}.csd`)
+  const examplesDir = path.join(__dirname, "examples");
+  const csdPath = path.join(examplesDir, `eeg_synth_${id}.csd`);
 
   // Verify file exists
   if (!fs.existsSync(csdPath)) {
-    return res.status(404).json({ error: `Instrument not found: ${id}` })
+    return res.status(404).json({ error: `Instrument not found: ${id}` });
   }
 
   try {
@@ -991,63 +1154,64 @@ app.post("/api/instruments/launch", (req, res) => {
       // DO NOT launch CsoundQt in simulator mode
       if (settings.simulatorMode) {
         return res.status(400).json({
-          error: "Cannot launch CsoundQt in simulator mode. Disable simulator first.",
+          error:
+            "Cannot launch CsoundQt in simulator mode. Disable simulator first.",
           warning: "CsoundQt launch disabled in simulator mode",
-        })
+        });
       }
 
       // Launch in CsoundQt for editing
-      console.log(`📝 Opening in CsoundQt: ${id} at ${csdPath}`)
+      console.log(`📝 Opening in CsoundQt: ${id} at ${csdPath}`);
 
       // macOS: use 'open' command
       // Linux: use 'csoundqt' command
       // Windows: use 'csoundqt.exe' command
-      const isWindows = process.platform === "win32"
-      const isMac = process.platform === "darwin"
+      const isWindows = process.platform === "win32";
+      const isMac = process.platform === "darwin";
 
       try {
-        let qtProcess
+        let qtProcess;
         if (isMac) {
           // macOS: Use shell to expand CsoundQt* wildcard
-          console.log(`🍎 macOS: Launching CsoundQt with '${csdPath}'`)
-          qtProcess = spawn("sh", ["-c", `open -a CsoundQt* "${csdPath}"`])
+          console.log(`🍎 macOS: Launching CsoundQt with '${csdPath}'`);
+          qtProcess = spawn("sh", ["-c", `open -a CsoundQt* "${csdPath}"`]);
         } else if (isWindows) {
-          console.log(`🪟 Windows: Launching 'csoundqt.exe ${csdPath}'`)
-          qtProcess = spawn("csoundqt.exe", [csdPath])
+          console.log(`🪟 Windows: Launching 'csoundqt.exe ${csdPath}'`);
+          qtProcess = spawn("csoundqt.exe", [csdPath]);
         } else {
           // Linux
-          console.log(`🐧 Linux: Launching 'csoundqt ${csdPath}'`)
-          qtProcess = spawn("csoundqt", [csdPath])
+          console.log(`🐧 Linux: Launching 'csoundqt ${csdPath}'`);
+          qtProcess = spawn("csoundqt", [csdPath]);
         }
 
         // Log any errors from CsoundQt spawn
         if (qtProcess) {
           qtProcess.on("error", (err) => {
-            console.error(`❌ Failed to launch CsoundQt: ${err.message}`)
-          })
+            console.error(`❌ Failed to launch CsoundQt: ${err.message}`);
+          });
 
           qtProcess.on("close", (code) => {
-            console.log(`✅ CsoundQt closed (exit code ${code})`)
-          })
+            console.log(`✅ CsoundQt closed (exit code ${code})`);
+          });
 
           qtProcess.stdout?.on("data", (data) => {
-            console.log(`[CsoundQt] ${data.toString().trim()}`)
-          })
+            console.log(`[CsoundQt] ${data.toString().trim()}`);
+          });
 
           qtProcess.stderr?.on("data", (data) => {
-            console.log(`[CsoundQt ERROR] ${data.toString().trim()}`)
-          })
+            console.log(`[CsoundQt ERROR] ${data.toString().trim()}`);
+          });
         }
       } catch (err) {
-        console.error(`❌ Error spawning CsoundQt: ${err.message}`)
+        console.error(`❌ Error spawning CsoundQt: ${err.message}`);
         return res.status(500).json({
           error: `Failed to launch CsoundQt: ${err.message}. Is CsoundQt installed?`,
-        })
+        });
       }
 
       // Don't kill background instrument for CsoundQt mode
       // User can run CsoundQt independently
-      currentInstrument = id
+      currentInstrument = id;
 
       // Broadcast status (not technically "running" in headless mode, but open for editing)
       wss.clients.forEach((client) => {
@@ -1059,35 +1223,36 @@ app.post("/api/instruments/launch", (req, res) => {
               running: false,
               mode: "csoundqt_editing",
             }),
-          )
+          );
         }
-      })
+      });
 
       res.json({
         success: true,
         current: currentInstrument,
         running: false,
         mode: "csoundqt_editing",
-        message: "CsoundQt opened for editing. Run from there or use Headless mode for background playback.",
-      })
+        message:
+          "CsoundQt opened for editing. Run from there or use Headless mode for background playback.",
+      });
     } else {
       // Headless mode: launch Csound in background
 
       // Stop current instrument first
       if (csoundProcess && !csoundProcess.killed) {
-        csoundProcess.kill()
-        csoundProcess = null
+        csoundProcess.kill();
+        csoundProcess = null;
       }
 
-      console.log(`🎵 Launching instrument (headless): ${id}`)
-      csoundProcess = spawn("csound", ["-odac", "-d", csdPath])
-      currentInstrument = id
+      console.log(`🎵 Launching instrument (headless): ${id}`);
+      csoundProcess = spawn("csound", ["-odac", "-d", csdPath]);
+      currentInstrument = id;
 
       csoundProcess.on("close", (code) => {
-        console.log(`🎵 Instrument stopped: ${id} (exit code ${code})`)
+        console.log(`🎵 Instrument stopped: ${id} (exit code ${code})`);
         if (currentInstrument === id) {
-          currentInstrument = null
-          csoundProcess = null
+          currentInstrument = null;
+          csoundProcess = null;
         }
 
         // Broadcast status to all clients
@@ -1099,14 +1264,14 @@ app.post("/api/instruments/launch", (req, res) => {
                 current: currentInstrument,
                 running: false,
               }),
-            )
+            );
           }
-        })
-      })
+        });
+      });
 
       csoundProcess.stderr.on("data", (data) => {
-        console.log(`[CSOUND] ${data.toString().trim()}`)
-      })
+        console.log(`[CSOUND] ${data.toString().trim()}`);
+      });
 
       // Broadcast status to all clients
       wss.clients.forEach((client) => {
@@ -1118,28 +1283,28 @@ app.post("/api/instruments/launch", (req, res) => {
               running: true,
               mode: "headless",
             }),
-          )
+          );
         }
-      })
+      });
 
       res.json({
         success: true,
         current: currentInstrument,
         running: true,
         mode: "headless",
-      })
+      });
     }
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: err.message });
   }
-})
+});
 
 // Stop current instrument
 app.post("/api/instruments/stop", (req, res) => {
   if (csoundProcess && !csoundProcess.killed) {
-    csoundProcess.kill()
-    csoundProcess = null
-    currentInstrument = null
+    csoundProcess.kill();
+    csoundProcess = null;
+    currentInstrument = null;
 
     // Broadcast status
     wss.clients.forEach((client) => {
@@ -1150,56 +1315,56 @@ app.post("/api/instruments/stop", (req, res) => {
             current: null,
             running: false,
           }),
-        )
+        );
       }
-    })
+    });
   }
 
   res.json({
     success: true,
     current: currentInstrument,
     running: false,
-  })
-})
+  });
+});
 
 // Get current instrument status
 app.get("/api/instruments/status", (req, res) => {
   res.json({
     current: currentInstrument,
     running: csoundProcess && !csoundProcess.killed,
-  })
-})
+  });
+});
 
 // ============================================================================
 // Startup
 // ============================================================================
 
 function start() {
-  console.log("═══════════════════════════════════════════════════════════")
-  console.log("🧠 Muse EEG Neuro Dashboard PRO - Enhanced")
-  console.log("═══════════════════════════════════════════════════════════\n")
+  console.log("═══════════════════════════════════════════════════════════");
+  console.log("🧠 Muse EEG Neuro Dashboard PRO - Enhanced");
+  console.log("═══════════════════════════════════════════════════════════\n");
 
-  initOSC()
-  launchSwiftBridge()
+  initOSC();
+  launchSwiftBridge();
 
   app.listen(config.webPort, () => {
-    console.log(`✓ Web UI: http://localhost:${config.webPort}`)
-    console.log(`✓ WebSocket: ws://localhost:${config.wsPort}`)
-    console.log(`✓ OSC Target: ${config.oscHost}:${config.oscPort}`)
-    console.log(`✓ DSP Pipeline: ACTIVE`)
-    console.log(`✓ Simulator Mode: ${settings.simulatorMode ? "ON" : "OFF"}`)
-    console.log("\nWaiting for Muse devices or simulator mode...\n")
-  })
+    console.log(`✓ Web UI: http://localhost:${config.webPort}`);
+    console.log(`✓ WebSocket: ws://localhost:${config.wsPort}`);
+    console.log(`✓ OSC Target: ${config.oscHost}:${config.oscPort}`);
+    console.log(`✓ DSP Pipeline: ACTIVE`);
+    console.log(`✓ Simulator Mode: ${settings.simulatorMode ? "ON" : "OFF"}`);
+    console.log("\nWaiting for Muse devices or simulator mode...\n");
+  });
 }
 
 // Graceful shutdown
 process.on("SIGINT", () => {
-  console.log("\n🛑 Shutting down...")
-  if (swiftProcess) swiftProcess.kill()
-  if (csoundProcess) csoundProcess.kill()
-  if (oscPort) oscPort.close()
-  wss.close()
-  process.exit(0)
-})
+  console.log("\n🛑 Shutting down...");
+  if (swiftProcess) swiftProcess.kill();
+  if (csoundProcess) csoundProcess.kill();
+  if (oscPort) oscPort.close();
+  wss.close();
+  process.exit(0);
+});
 
-start()
+start();

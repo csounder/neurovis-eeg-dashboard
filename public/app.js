@@ -2512,57 +2512,63 @@ function updateZScoreBars() {
 }
 
 function calibrationStart() {
-  console.log("🔄 Starting calibration...");
+  console.log("🔄 Starting calibration (90 seconds)...");
   brainState.calibration.isCalibrating = true;
   brainState.calibration.progress = 0;
   brainState.calibration.samplesCollected = 0;
   updateBrainStateUI();
 
-  // Send to server
-  if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-    window.ws.send(JSON.stringify({ type: "calibration_start" }));
-  }
+  // Send to server API
+  fetch("/api/calibration/start", { method: "POST" }).catch((e) =>
+    console.error("Calibration start error:", e),
+  );
 
-  // Simulate 90-second calibration if no server response
-  const interval = setInterval(() => {
-    brainState.calibration.progress = Math.min(
-      brainState.calibration.progress + 0.01,
-      1,
-    );
-    brainState.calibration.samplesCollected = Math.floor(
-      brainState.calibration.progress * 15000,
-    );
-    updateBrainStateUI();
+  // Poll calibration status every 500ms
+  const statusInterval = setInterval(() => {
+    fetch("/api/calibration/status")
+      .then((r) => r.json())
+      .then((data) => {
+        brainState.calibration.isCalibrating = data.isCalibrating;
+        brainState.calibration.progress = data.progress || 0;
+        brainState.calibration.samplesCollected = data.samplesCollected || 0;
+        updateBrainStateUI();
 
-    if (brainState.calibration.progress >= 1) {
-      clearInterval(interval);
-      brainState.calibration.isCalibrating = false;
-      brainState.calibration.isLocked = true;
-      // Simulate z-scores
-      brainState.zscores = {
-        delta: (Math.random() - 0.5) * 2,
-        theta: (Math.random() - 0.5) * 2,
-        alpha: (Math.random() - 0.5) * 2,
-        beta: (Math.random() - 0.5) * 2,
-        gamma: (Math.random() - 0.5) * 2,
-      };
-      updateBrainStateUI();
-    }
-  }, 100);
+        // When done
+        if (!data.isCalibrating && data.progress >= 1) {
+          clearInterval(statusInterval);
+          brainState.calibration.isLocked = true;
+          brainState.zscores = data.zscores || {
+            delta: 0,
+            theta: 0,
+            alpha: 0,
+            beta: 0,
+            gamma: 0,
+          };
+          console.log("✅ Calibration complete! Z-scores:", brainState.zscores);
+          updateBrainStateUI();
+        }
+      })
+      .catch((e) => console.error("Status polling error:", e));
+  }, 500);
 }
 
 function calibrationStop() {
-  console.log("🛑 Stopping calibration...");
+  console.log("⏹️ Stopping calibration...");
   brainState.calibration.isCalibrating = false;
   updateBrainStateUI();
 
-  if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-    window.ws.send(JSON.stringify({ type: "calibration_stop" }));
-  }
+  fetch("/api/calibration/stop", { method: "POST" })
+    .then((r) => r.json())
+    .then((data) => {
+      console.log("Calibration stopped:", data);
+      brainState.calibration.isLocked = true;
+      updateBrainStateUI();
+    })
+    .catch((e) => console.error("Calibration stop error:", e));
 }
 
 function calibrationReset() {
-  console.log("↻ Resetting calibration...");
+  console.log("🔃 Resetting calibration...");
   brainState.calibration.isLocked = false;
   brainState.calibration.isCalibrating = false;
   brainState.calibration.progress = 0;
@@ -2570,9 +2576,13 @@ function calibrationReset() {
   brainState.zscores = { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 };
   updateBrainStateUI();
 
-  if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-    window.ws.send(JSON.stringify({ type: "calibration_reset" }));
-  }
+  fetch("/api/calibration/reset", { method: "POST" })
+    .then((r) => r.json())
+    .then(() => {
+      console.log("Calibration reset complete");
+      updateBrainStateUI();
+    })
+    .catch((e) => console.error("Calibration reset error:", e));
 }
 
 function updateBrainStateEstimate() {
