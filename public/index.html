@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🧠 Muse EEG Neuro Dashboard PRO</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75'>🧠</text></svg>"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-content">
+          <h1>🧠 Muse EEG Neuro Dashboard PRO</h1>
+          <div class="header-right">
+            <div class="status-indicators">
+              <div class="status" id="oscStatus">
+                <span class="dot"></span>
+                <span>OSC</span>
+              </div>
+              <div class="status" id="wsStatus">
+                <span class="dot"></span>
+                <span>WebSocket</span>
+              </div>
+              <div class="status" id="deviceStatus">
+                <span class="dot"></span>
+                <span>Device</span>
+              </div>
+              <div class="status" id="simulatorStatus">
+                <span class="dot"></span>
+                <span id="simLabel">Live</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Layout -->
+      <div class="main-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <!-- Device Control -->
+          <section class="sidebar-section">
+            <h3>📱 Device</h3>
+            <div id="deviceList" class="device-list">
+              <p class="placeholder">Scanning...</p>
+            </div>
+          </section>
+
+          <!-- Simulator Toggle -->
+          <section class="sidebar-section">
+            <h3>🎲 Simulator</h3>
+            <label class="toggle">
+              <input type="checkbox" id="simulatorToggle" />
+              <span>Enable Test Mode</span>
+            </label>
+            <div id="simControls" style="display: none; margin-top: 10px">
+              <label
+                >Frequency (Hz):
+                <input type="range" id="simFreq" min="1" max="30" value="10" style="width: 100%" />
+                <span id="simFreqDisplay">10</span>
+              </label>
+            </div>
+          </section>
+
+          <!-- Recording -->
+          <section class="sidebar-section">
+            <h3>📝 Recording</h3>
+            <button id="recordBtn" class="btn btn-primary btn-block">Start Recording</button>
+            <button id="downloadBtn" class="btn btn-secondary btn-block" disabled>Download CSV</button>
+            <p id="recordStatus" style="font-size: 0.85rem; color: #666; margin-top: 5px"></p>
+          </section>
+
+           <!-- INSTRUMENT SELECTION - HIDDEN -->
+            <section class="sidebar-section" style="display: none;">
+              <h3>🎵 Csound Instruments</h3>
+            </section>
+
+          <!-- EEG SCALING SLIDERS -->
+          <section class="sidebar-section">
+            <h3>🎚️ EEG → Synth Scaling</h3>
+            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px;">
+              Adjust modulation strength (50-200%) for each sensor
+            </p>
+            <div class="eeg-scaling">
+              <div class="scaling-slider">
+                <label>AF7 - Left Forehead 👁️<br/><span id="scale1Display" style="font-size: 0.75rem; color: var(--text-secondary);">100%</span></label>
+                <input type="range" id="eegScale1" min="50" max="200" value="100" class="slider" />
+              </div>
+              <div class="scaling-slider">
+                <label>AF8 - Right Forehead 👁️<br/><span id="scale2Display" style="font-size: 0.75rem; color: var(--text-secondary);">100%</span></label>
+                <input type="range" id="eegScale2" min="50" max="200" value="100" class="slider" />
+              </div>
+              <div class="scaling-slider">
+                <label>TP9 - Behind Left Ear 😌<br/><span id="scale3Display" style="font-size: 0.75rem; color: var(--text-secondary);">100%</span></label>
+                <input type="range" id="eegScale3" min="50" max="200" value="100" class="slider" />
+              </div>
+              <div class="scaling-slider">
+                <label>TP10 - Behind Right Ear 😌<br/><span id="scale4Display" style="font-size: 0.75rem; color: var(--text-secondary);">100%</span></label>
+                <input type="range" id="eegScale4" min="50" max="200" value="100" class="slider" />
+              </div>
+            </div>
+          </section>
+
+          <!-- Stats -->
+          <section class="sidebar-section">
+            <h3>📈 Stats</h3>
+            <div id="statsPanel" class="stats-list">
+              <!-- Updated dynamically -->
+            </div>
+          </section>
+
+          <!-- BIOFEEDBACK THRESHOLDS -->
+          <section class="sidebar-section">
+            <h3>⚠️ Biofeedback Alerts</h3>
+            <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 10px;">
+              Trigger alerts when bands exceed thresholds
+            </p>
+            
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Alpha Threshold (Relaxation)
+                <div class="dsp-value">
+                  <input type="range" id="alphaThreshold" min="0" max="1" step="0.05" value="0.5" class="dsp-slider" />
+                  <span id="alphaThresholdValue">0.50</span>
+                </div>
+              </label>
+              <div id="alphaAlertStatus" style="font-size: 0.7rem; color: #aaa; margin-top: 4px;">—</div>
+            </div>
+            
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Beta Threshold (Focus)
+                <div class="dsp-value">
+                  <input type="range" id="betaThreshold" min="0" max="1" step="0.05" value="0.4" class="dsp-slider" />
+                  <span id="betaThresholdValue">0.40</span>
+                </div>
+              </label>
+              <div id="betaAlertStatus" style="font-size: 0.7rem; color: #aaa; margin-top: 4px;">—</div>
+            </div>
+            
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Delta Threshold (Fatigue)
+                <div class="dsp-value">
+                  <input type="range" id="deltaThreshold" min="0" max="1" step="0.05" value="0.6" class="dsp-slider" />
+                  <span id="deltaThresholdValue">0.60</span>
+                </div>
+              </label>
+              <div id="deltaAlertStatus" style="font-size: 0.7rem; color: #aaa; margin-top: 4px;">—</div>
+            </div>
+            
+            <label class="dsp-toggle" style="margin-top: 10px;">
+              <input type="checkbox" id="alertSoundsToggle" checked />
+              <span>Enable Alert Sounds</span>
+            </label>
+          </section>
+
+           <!-- OSC STREAM SELECTION -->
+           <section class="sidebar-section">
+             <h3>📡 OSC Streams to Csound</h3>
+             <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 8px;">
+               Select which data streams to send via OSC
+             </p>
+
+
+           <!-- DSP Pipeline -->
+          <section class="sidebar-section">
+            <h3>🔧 DSP Pipeline</h3>
+
+            <!-- Filters -->
+             <div class="dsp-group">
+               <label class="dsp-toggle">
+                 <input type="checkbox" id="notchFilter" checked />
+                 <span>Notch 60Hz <span id="notchStatus" style="font-size: 0.7rem; color: var(--text-secondary);">ON</span></span>
+               </label>
+               <label class="dsp-toggle">
+                 <input type="checkbox" id="bandpassFilter" checked />
+                 <span>Bandpass 1-45 <span id="bandpassStatus" style="font-size: 0.7rem; color: var(--text-secondary);">ON</span></span>
+               </label>
+             </div>
+
+             <!-- Smoothing -->
+             <div class="dsp-group">
+               <label class="dsp-label">
+                 Smoothing (0=Off)
+                 <div class="dsp-value">
+                   <input type="range" id="smoothingSlider" min="0" max="50" value="10" class="dsp-slider" />
+                   <span id="smoothingValue">10</span>
+                 </div>
+               </label>
+             </div>
+
+             <!-- Scaling -->
+             <div class="dsp-group">
+               <label class="dsp-label">
+                 Scaling
+                 <select id="scalingMode" class="dsp-select">
+                   <option value="raw">Raw (No Scaling)</option>
+                   <option value="0-1">0-1 (Default)</option>
+                   <option value="0-3">0-3 (Mind Monitor)</option>
+                   <option value="zscore">Z-Score</option>
+                 </select>
+               </label>
+             </div>
+
+             <!-- Output Sample Rate -->
+             <div class="dsp-group">
+               <label class="dsp-label">
+                 Output Rate (Hz)
+                 <select id="outputRateHz" class="dsp-select">
+                   <option value="10">10 Hz (WebSocket Only)</option>
+                   <option value="64">64 Hz (Slow)</option>
+                   <option value="128">128 Hz (Normal)</option>
+                   <option value="256" selected>256 Hz (Fast)</option>
+                   <option value="512">512 Hz (Very Fast)</option>
+                 </select>
+               </label>
+             </div>
+
+            <!-- Artifact Threshold -->
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Artifact Threshold
+                <div class="dsp-value">
+                  <input type="range" id="artifactSlider" min="50" max="500" step="25" value="100" class="dsp-slider" />
+                  <span id="artifactValue">100</span>
+                </div>
+              </label>
+            </div>
+          </section>
+
+          <!-- Display Options -->
+          <section class="sidebar-section">
+            <h3>📺 Display</h3>
+
+            <!-- Chart Size -->
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Chart Size
+                <select id="chartSize" class="dsp-select">
+                  <option value="compact">Compact</option>
+                  <option value="normal" selected>Normal</option>
+                  <option value="large">Large</option>
+                </select>
+              </label>
+            </div>
+
+            <!-- Channel Toggles -->
+            <div class="dsp-group">
+              <label class="dsp-toggle">
+                <input type="checkbox" id="ch1Toggle" checked />
+                <span>AF7 - Left Forehead</span>
+              </label>
+              <label class="dsp-toggle">
+                <input type="checkbox" id="ch2Toggle" checked />
+                <span>AF8 - Right Forehead</span>
+              </label>
+              <label class="dsp-toggle">
+                <input type="checkbox" id="ch3Toggle" checked />
+                <span>TP9 - Behind Left Ear</span>
+              </label>
+              <label class="dsp-toggle">
+                <input type="checkbox" id="ch4Toggle" checked />
+                <span>TP10 - Behind Right Ear</span>
+              </label>
+            </div>
+          </section>
+
+           <!-- Presets -->
+           <section class="sidebar-section">
+             <h3>💾 Presets</h3>
+             <select id="presetSelector" class="dsp-select">
+               <option value="">-- Select Preset --</option>
+               <option value="relaxed">Relaxed (EMA 0.15)</option>
+               <option value="focused">Focused (Savitzky-Golay)</option>
+               <option value="sleep">Sleep (EMA 0.25)</option>
+               <option value="clean">Clean (Median)</option>
+               <option value="mindMonitor">Mind Monitor (Notch 60Hz)</option>
+               <option value="rawPassThrough">Raw Pass-Through</option>
+               <option value="deltaSuppress">Delta Suppress</option>
+               <option value="artifactRejection">Artifact Rejection</option>
+             </select>
+             <div id="presetDSPInfo" style="margin-top: 8px; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; font-size: 0.75rem; color: var(--text-secondary); display: none;">
+               <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 3px;" id="presetDSPName"></div>
+               <div id="presetDSPParams"></div>
+             </div>
+             <button id="savePresetBtn" class="btn btn-secondary btn-block" style="margin-top: 6px">Save Current</button>
+           </section>
+
+          <!-- Performance -->
+          <section class="sidebar-section">
+            <h3>⚡ Performance</h3>
+            <div id="perfPanel" class="stats-list">
+              <div class="stat-item">
+                <span class="stat-label">Packets/sec</span>
+                <span class="stat-value" id="packetsPerSec">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Latency</span>
+                <span class="stat-value" id="latencyMs">0ms</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">FFT Ready</span>
+                <span class="stat-value" id="fftReady">NO</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Display Rate -->
+          <section class="sidebar-section">
+            <h3>🎬 Display Rate</h3>
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Update Rate (Hz)
+                <div class="dsp-value">
+                  <input type="range" id="displayRateSlider" min="1" max="60" value="30" class="dsp-slider" />
+                  <span id="displayRateValue">30</span>
+                </div>
+              </label>
+            </div>
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Buffer Size
+                <select id="bufferSizeSelect" class="dsp-select">
+                  <option value="128">128 samples</option>
+                  <option value="256" selected>256 samples</option>
+                  <option value="512">512 samples</option>
+                  <option value="1024">1024 samples</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <!-- Export -->
+          <section class="sidebar-section">
+            <h3>💾 Export</h3>
+            <button id="exportJsonBtn" class="btn btn-secondary btn-block">JSON</button>
+            <button id="exportCsvBtn" class="btn btn-secondary btn-block" style="margin-top: 4px">CSV</button>
+          </section>
+        </aside>
+
+        <!-- Main Content -->
+         <main class="main-content">
+              <!-- Tab Selection Buttons -->
+              <div style="display: flex; gap: 0; padding: 0; border-bottom: 2px solid var(--border); background: var(--bg-primary);">
+                 <button class="tab-btn active" data-tab="raw">📊 Raw EEG</button>
+                 <button class="tab-btn" data-tab="bands">🧠 Bands</button>
+                 <button class="tab-btn" data-tab="fftSpectrum">🎛️ FFT+Bands</button>
+                 <button class="tab-btn" data-tab="brain">🧠 Brain State</button>
+                 <button class="tab-btn" data-tab="quad">⊞ Quad View</button>
+                 <button class="tab-btn" data-tab="waterfall">🌊 3D Waterfall</button>
+                 <button class="tab-btn" data-tab="phase">🎯 Phase</button>
+                  <button class="tab-btn" data-tab="ppgHR">❤️ PPG/HR</button>
+                  <button class="tab-btn" data-tab="motion">💨 Motion</button>
+                  <button class="tab-btn" data-tab="dsp">⚙️ DSP Processing</button>
+                  <button class="tab-btn" data-tab="osc">📡 OSC Monitor</button>
+               </div>
+             
+             <!-- Single Display Area -->
+             <div class="tab-content" style="display: block; flex: 1; overflow: auto;">
+            <!-- Raw EEG Tab -->
+            <div id="raw" class="tab-pane active">
+              <div class="chart-grid">
+                <div class="chart-container">
+                  <h3>AF7 - Left Forehead 👁️</h3>
+                  <p class="sensor-info">Eye blinks, Concentration</p>
+                  <canvas id="chart1"></canvas>
+                </div>
+                <div class="chart-container">
+                  <h3>AF8 - Right Forehead 👁️</h3>
+                  <p class="sensor-info">Eye blinks, Concentration</p>
+                  <canvas id="chart2"></canvas>
+                </div>
+                <div class="chart-container">
+                  <h3>TP9 - Behind Left Ear 😌</h3>
+                  <p class="sensor-info">Relaxation, Jaw clenching</p>
+                  <canvas id="chart3"></canvas>
+                </div>
+                <div class="chart-container">
+                  <h3>TP10 - Behind Right Ear 😌</h3>
+                  <p class="sensor-info">Relaxation, Jaw clenching</p>
+                  <canvas id="chart4"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bands Tab -->
+            <div id="bands" class="tab-pane">
+              <div class="bands-grid">
+                <div class="band-display">
+                  <h3>Band Powers (Ch1)</h3>
+                  <div class="band-bars">
+                    <div class="band-item">
+                      <span class="band-label">Delta (1-4Hz)</span>
+                      <div class="band-bar">
+                        <div id="band-delta" class="band-fill"></div>
+                      </div>
+                      <span id="band-delta-val" class="band-value">0</span>
+                    </div>
+                    <div class="band-item">
+                      <span class="band-label">Theta (4-8Hz)</span>
+                      <div class="band-bar">
+                        <div id="band-theta" class="band-fill"></div>
+                      </div>
+                      <span id="band-theta-val" class="band-value">0</span>
+                    </div>
+                    <div class="band-item">
+                      <span class="band-label">Alpha (8-12Hz)</span>
+                      <div class="band-bar">
+                        <div id="band-alpha" class="band-fill"></div>
+                      </div>
+                      <span id="band-alpha-val" class="band-value">0</span>
+                    </div>
+                    <div class="band-item">
+                      <span class="band-label">Beta (12-30Hz)</span>
+                      <div class="band-bar">
+                        <div id="band-beta" class="band-fill"></div>
+                      </div>
+                      <span id="band-beta-val" class="band-value">0</span>
+                    </div>
+                    <div class="band-item">
+                      <span class="band-label">Gamma (30-44Hz)</span>
+                      <div class="band-bar">
+                        <div id="band-gamma" class="band-fill"></div>
+                      </div>
+                      <span id="band-gamma-val" class="band-value">0</span>
+                    </div>
+                  </div>
+                </div>
+               </div>
+             </div>
+
+             <!-- Brain State & Calibration Tab -->
+             <div id="brain" class="tab-pane">
+               <div class="chart-container" style="max-width: 600px;">
+                 <h3>🧠 Brain State & Calibration</h3>
+                 <p class="sensor-info">Real-time brain state classification (Aroused/Focused/Relaxed/Drowsy/Neutral) with personalized z-score calibration. Calibrate for 90 seconds to establish your baseline.</p>
+                 
+                 <!-- Brain State Display -->
+                 <div style="margin-top: 16px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                   <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px;">
+                     <!-- State Label -->
+                     <div id="brainStateLabel" style="padding: 12px 24px; border-radius: 8px; font-size: 1.4rem; font-weight: 800; background: #6b728020; color: #6b7280; border: 2px solid #6b728040; min-width: 180px; text-align: center;">
+                       Neutral
+                     </div>
+                     
+                     <!-- Calibration Status -->
+                     <div style="flex: 1;">
+                       <div id="calibrationStatus" style="font-size: 0.85rem; font-weight: 600; color: #888; margin-bottom: 6px;">
+                         Not calibrated — start calibration
+                       </div>
+                       <div id="calibrationProgressBar" style="height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;">
+                         <div id="calibrationProgressFill" style="height: 100%; width: 0%; background: #fbbf24; border-radius: 2px; transition: width 0.5s;"></div>
+                       </div>
+                     </div>
+                   </div>
+                   
+                   <!-- Calibration Buttons -->
+                   <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                     <button id="calibrationStartBtn" class="btn btn-small" style="background: #fbbf2420; color: #fbbf24; border: 1px solid #fbbf24;">
+                       ▶ Start Calibration
+                     </button>
+                     <button id="calibrationStopBtn" class="btn btn-small" style="background: #ef444420; color: #ef4444; border: 1px solid #ef4444; display: none;">
+                       ■ Stop
+                     </button>
+                     <button id="calibrationResetBtn" class="btn btn-small" style="background: transparent; color: #888; border: 1px solid #444; display: none;">
+                       ↻ Reset
+                     </button>
+                   </div>
+                   
+                   <!-- Z-Score Bars (shown after calibration) -->
+                   <div id="zscoreBars" style="display: none;">
+                     <div style="font-size: 0.85rem; font-weight: 600; color: #ccc; margin-bottom: 8px;">
+                       Z-Scores (Personalized)
+                     </div>
+                     <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;">
+                       <div style="text-align: center;">
+                         <div style="height: 50px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
+                           <div id="zscore-delta" style="width: 16px; height: 20px; background: #6366f160; border: 1px solid #6366f1; border-radius: 2px;"></div>
+                         </div>
+                         <div style="font-size: 0.75rem; font-weight: 600; color: #6366f1;" id="zscore-delta-val">0.0</div>
+                         <div style="font-size: 0.65rem; color: #888;">Delta</div>
+                       </div>
+                       <div style="text-align: center;">
+                         <div style="height: 50px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
+                           <div id="zscore-theta" style="width: 16px; height: 20px; background: #f5940160; border: 1px solid #f59e0b; border-radius: 2px;"></div>
+                         </div>
+                         <div style="font-size: 0.75rem; font-weight: 600; color: #f59e0b;" id="zscore-theta-val">0.0</div>
+                         <div style="font-size: 0.65rem; color: #888;">Theta</div>
+                       </div>
+                       <div style="text-align: center;">
+                         <div style="height: 50px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
+                           <div id="zscore-alpha" style="width: 16px; height: 20px; background: #22c55e60; border: 1px solid #22c55e; border-radius: 2px;"></div>
+                         </div>
+                         <div style="font-size: 0.75rem; font-weight: 600; color: #22c55e;" id="zscore-alpha-val">0.0</div>
+                         <div style="font-size: 0.65rem; color: #888;">Alpha</div>
+                       </div>
+                       <div style="text-align: center;">
+                         <div style="height: 50px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
+                           <div id="zscore-beta" style="width: 16px; height: 20px; background: #3b82f660; border: 1px solid #3b82f6; border-radius: 2px;"></div>
+                         </div>
+                         <div style="font-size: 0.75rem; font-weight: 600; color: #3b82f6;" id="zscore-beta-val">0.0</div>
+                         <div style="font-size: 0.65rem; color: #888;">Beta</div>
+                       </div>
+                       <div style="text-align: center;">
+                         <div style="height: 50px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
+                           <div id="zscore-gamma" style="width: 16px; height: 20px; background: #ef444460; border: 1px solid #ef4444; border-radius: 2px;"></div>
+                         </div>
+                         <div style="font-size: 0.75rem; font-weight: 600; color: #ef4444;" id="zscore-gamma-val">0.0</div>
+                         <div style="font-size: 0.65rem; color: #888;">Gamma</div>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             </div>
+
+               <!-- FFT+Bands Tab (NeuroVis-style) -->
+               <div id="fftSpectrum" class="tab-pane">
+                <div class="chart-container">
+                  <h3>🎛️ FFT Spectrum + Power Bands</h3>
+                  <p class="sensor-info">Left: live frequency spectrum (0–60 Hz) with band regions color-coded. Right: all 5 band powers as animated bars with sparkline histories. Shows how spectral energy distributes across bands in real time.</p>
+                  <canvas id="fftSpectrumCanvas" width="1100" height="350" style="width:100%;height:300px;border-radius:8px;background:#0d1117;"></canvas>
+                </div>
+              </div>
+
+              <!-- Quad View Tab (4 panes - each selectable) -->
+              <div id="quad" class="tab-pane">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(220px, 1fr) minmax(220px, 1fr); gap: 12px; min-height: 520px; padding: 12px;">
+                  <!-- Quadrant A (Top-Left) -->
+                  <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+                    <div style="padding: 6px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-tertiary); flex-shrink: 0;">
+                      <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">A</span>
+                      <select id="quadPanelA" style="padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace; max-width: 140px;">
+                        <option value="fftSpectrum">FFT+Bands</option>
+                        <option value="waterfall">3D Waterfall</option>
+                        <option value="phase">Phase Polar</option>
+                        <option value="ppgHR">PPG/HR</option>
+                      </select>
+                    </div>
+                    <div style="padding: 8px; flex: 1; overflow: auto; min-height: 0;" id="quadPanelA-content"></div>
+                  </div>
+
+                  <!-- Quadrant B (Top-Right) -->
+                  <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+                    <div style="padding: 6px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-tertiary); flex-shrink: 0;">
+                      <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">B</span>
+                      <select id="quadPanelB" style="padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace; max-width: 140px;">
+                        <option value="waterfall">3D Waterfall</option>
+                        <option value="fftSpectrum">FFT+Bands</option>
+                        <option value="phase">Phase Polar</option>
+                        <option value="ppgHR">PPG/HR</option>
+                      </select>
+                    </div>
+                    <div style="padding: 8px; flex: 1; overflow: auto; min-height: 0;" id="quadPanelB-content"></div>
+                  </div>
+
+                  <!-- Quadrant C (Bottom-Left) -->
+                  <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+                    <div style="padding: 6px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-tertiary); flex-shrink: 0;">
+                      <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">C</span>
+                      <select id="quadPanelC" style="padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace; max-width: 140px;">
+                        <option value="phase">Phase Polar</option>
+                        <option value="fftSpectrum">FFT+Bands</option>
+                        <option value="waterfall">3D Waterfall</option>
+                        <option value="ppgHR">PPG/HR</option>
+                      </select>
+                    </div>
+                    <div style="padding: 8px; flex: 1; overflow: auto; min-height: 0;" id="quadPanelC-content"></div>
+                  </div>
+
+                  <!-- Quadrant D (Bottom-Right) -->
+                  <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+                    <div style="padding: 6px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-tertiary); flex-shrink: 0;">
+                      <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">D</span>
+                      <select id="quadPanelD" style="padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace; max-width: 140px;">
+                        <option value="ppgHR">PPG/HR</option>
+                        <option value="fftSpectrum">FFT+Bands</option>
+                        <option value="waterfall">3D Waterfall</option>
+                        <option value="phase">Phase Polar</option>
+                      </select>
+                    </div>
+                    <div style="padding: 8px; flex: 1; overflow: auto; min-height: 0;" id="quadPanelD-content"></div>
+                  </div>
+                </div>
+              </div>
+
+             <!-- 3D Waterfall Tab -->
+             <div id="waterfall" class="tab-pane">
+               <div class="chart-container">
+                 <h3>🌊 3D Waterfall — IBVA-style</h3>
+                 <p class="sensor-info">Band power across all electrodes stacked in time (newer traces in front). Each line = one time snapshot. Height = amplitude. Inspired by the IBVA system's waterfall display for seeing temporal patterns in band power.</p>
+                 <canvas id="waterfallCanvas" width="1300" height="580" style="width:100%;height:440px;border-radius:8px;background:#0d1117;"></canvas>
+               </div>
+             </div>
+
+             <!-- Phase Tab -->
+             <div id="phase" class="tab-pane">
+               <div class="chart-container">
+                 <h3>🎯 Phase — Polar Plot</h3>
+                 <p class="sensor-info">Polar plot showing phase angle and magnitude of oscillations per electrode. Distance from center = power. Angle = instantaneous phase. Trails show recent trajectory. When electrodes cluster together, the brain regions are synchronizing.</p>
+                 <canvas id="phaseCanvas" width="500" height="500" style="width:100%;max-width:460px;height:400px;border-radius:8px;background:#0d1117;display:block;margin:0 auto;"></canvas>
+               </div>
+             </div>
+
+             <!-- PPG / Heart Rate Tab -->
+             <div id="ppgHR" class="tab-pane">
+               <div class="chart-container">
+                 <h3>❤️ PPG / Heart Rate</h3>
+                 <p class="sensor-info">Photoplethysmography measures blood volume pulse via infrared light. The BPM readout is smoothed. The waveform shows the cardiac cycle. Heart rate variability (HRV) can be observed in the spacing between peaks.</p>
+                 <canvas id="ppgHRCanvas" width="1100" height="400" style="width:100%;height:340px;border-radius:8px;background:#0d1117;"></canvas>
+               </div>
+             </div>
+
+             <!-- Motion Tab -->
+              <div id="motion" class="tab-pane">
+                <div style="display: flex; flex-direction: column; gap: 16px; padding: 16px; height: 100%;">
+                  <div class="chart-container" style="flex: 1;">
+                    <h3>💨 Accelerometer (10 Hz)</h3>
+                    <p class="sensor-info">X, Y, Z axes in g (gravity units)</p>
+                    <canvas id="accelChart" width="1000" height="300" style="width:100%;height:100%;border-radius:8px;background:#0d1117;"></canvas>
+                  </div>
+                  <div class="chart-container" style="flex: 1;">
+                    <h3>🔄 Gyroscope (10 Hz)</h3>
+                    <p class="sensor-info">Rotation rates around X, Y, Z axes</p>
+                    <canvas id="gyroChart" width="1000" height="300" style="width:100%;height:100%;border-radius:8px;background:#0d1117;"></canvas>
+                  </div>
+                </div>
+               </div>
+                 </div>
+                  <div class="chart-container">
+                    <h3>🔄 Gyroscope (10 Hz)</h3>
+                    <p class="sensor-info">Rotation rates around X, Y, Z axes</p>
+                    <canvas id="gyroChart" width="600" height="250" style="width:100%;height:200px;border-radius:8px;background:#0d1117;"></canvas>
+                   <div style="margin-top: 8px; font-size: 0.85rem;">
+                     <div>X: <span id="gyroXValue">0.00</span> °/s</div>
+                     <div>Y: <span id="gyroYValue">0.00</span> °/s</div>
+                     <div>Z: <span id="gyroZValue">0.00</span> °/s</div>
+                   </div>
+                 </div>
+                  <div class="chart-container">
+                    <h3>❤️ Heart Rate / PPG (1 Hz)</h3>
+                    <p class="sensor-info">Red, Green, Infrared LED readings</p>
+                    <canvas id="ppgChart" width="600" height="250" style="width:100%;height:200px;border-radius:8px;background:#0d1117;"></canvas>
+                   <div style="margin-top: 8px; font-size: 0.85rem;">
+                     <div>Red: <span id="ppgRedValue">0</span></div>
+                     <div>Green: <span id="ppgGreenValue">0</span></div>
+                     <div>IR: <span id="ppgIRValue">0</span></div>
+                   </div>
+                 </div>
+
+               </div>
+              </div>
+
+             <!-- DSP Processing Tab -->
+             <div id="dsp" class="tab-pane">
+               <div style="padding: 16px;">
+                 <h2 style="margin-top: 0; color: var(--text-primary);">⚙️ Signal Processing Pipeline</h2>
+                 <p style="color: var(--text-secondary); margin-bottom: 20px;">Select and configure real-time signal processors. Each category applies its own transformation. Parameters update live on all connected streams.</p>
+
+                 <!-- DSP Categories Grid -->
+                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+
+                   <!-- FILTER Category -->
+                   <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                     <h3 style="margin: 0 0 12px 0; color: #6366f1; font-size: 1rem;">🔊 Filter</h3>
+                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+                       <button class="dsp-btn" data-proc="none" title="Bypass filter">Bypass</button>
+                       <button class="dsp-btn" data-proc="lp" title="Smooths high-frequency noise">Low Pass</button>
+                       <button class="dsp-btn" data-proc="hp" title="Removes DC drift">High Pass</button>
+                       <button class="dsp-btn" data-proc="notch" title="Removes 50/60Hz mains">Notch</button>
+                       <button class="dsp-btn" data-proc="bp" title="Isolates freq band">Band Pass</button>
+                       <button class="dsp-btn" data-proc="dc" title="Block DC offset">DC Block</button>
+                       <button class="dsp-btn" data-proc="deltafilt" title="Suppresses Delta (0.5-4Hz)">Delta Suppress</button>
+                     </div>
+                     <div id="filterParams" style="padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.85rem;"></div>
+                   </div>
+
+                   <!-- SMOOTH Category -->
+                   <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                     <h3 style="margin: 0 0 12px 0; color: #f59e0b; font-size: 1rem;">📈 Smooth</h3>
+                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+                       <button class="dsp-btn" data-proc="ema" title="Exponential Moving Avg">EMA</button>
+                       <button class="dsp-btn" data-proc="savgol" title="Savitzky-Golay polynomial">Savitzky-Golay</button>
+                       <button class="dsp-btn" data-proc="median" title="Median filter">Median</button>
+                       <button class="dsp-btn" data-proc="kalman" title="Kalman filter">Kalman</button>
+                       <button class="dsp-btn" data-proc="rms" title="RMS envelope">RMS Env</button>
+                       <button class="dsp-btn" data-proc="gauss" title="Gaussian blur">Gaussian</button>
+                     </div>
+                     <div id="smoothParams" style="padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.85rem;"></div>
+                   </div>
+
+                   <!-- GATE Category -->
+                   <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                     <h3 style="margin: 0 0 12px 0; color: #22c55e; font-size: 1rem;">🚪 Gate & Threshold</h3>
+                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+                       <button class="dsp-btn" data-proc="gate" title="Noise gate">Noise Gate</button>
+                       <button class="dsp-btn" data-proc="thresh" title="Hard threshold">Threshold</button>
+                       <button class="dsp-btn" data-proc="hyst" title="Hysteresis comparator">Hysteresis</button>
+                       <button class="dsp-btn" data-proc="peak" title="Peak detector">Peak Detect</button>
+                       <button class="dsp-btn" data-proc="zerox" title="Zero-crossing detector">Zero-Cross</button>
+                       <button class="dsp-btn" data-proc="artifact" title="Artifact rejection">Artifact Rej</button>
+                     </div>
+                     <div id="gateParams" style="padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.85rem;"></div>
+                   </div>
+
+                   <!-- SHAPE Category -->
+                   <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                     <h3 style="margin: 0 0 12px 0; color: #3b82f6; font-size: 1rem;">📐 Shape</h3>
+                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+                       <button class="dsp-btn" data-proc="envf" title="Envelope follower">Env Follow</button>
+                       <button class="dsp-btn" data-proc="slew" title="Slew rate limit">Slew Limit</button>
+                       <button class="dsp-btn" data-proc="clip" title="Soft clipping">Soft Clip</button>
+                       <button class="dsp-btn" data-proc="rect" title="Full wave rectifier">Rectifier</button>
+                     </div>
+                     <div id="shapeParams" style="padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.85rem;"></div>
+                   </div>
+
+                 </div>
+
+                 <!-- Active Processor Info Panel -->
+                 <div style="margin-top: 20px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                   <h3 style="margin: 0 0 8px 0; color: var(--text-secondary);">Active Processor</h3>
+                   <div style="font-size: 1.1rem; font-weight: 600; color: #6366f1; margin-bottom: 8px;" id="activeProcName">
+                     None (Bypass)
+                   </div>
+                   <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;" id="activeProcDesc">
+                     No processing applied. Signal passes through unchanged.
+                   </p>
+                 </div>
+
+                </div>
+              </div>
+
+             <!-- OSC Monitor Tab -->
+             <div id="osc" class="tab-pane">
+               <div style="padding: 16px;">
+                 <h2 style="margin-top: 0; color: var(--text-primary);">📡 OSC Stream Monitor</h2>
+                 <p style="color: var(--text-secondary); margin-bottom: 16px;">Real-time view of OSC messages being sent. Choose device, mode, and what to stream.</p>
+
+                  <!-- Device Selection -->
+                  <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                    <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">Device</label>
+                    <select id="oscDeviceSelect" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); font-family: monospace; font-weight: 600;">
+                      <option value="muse2">Muse 2 (4 ch: TP9, AF7, AF8, TP10)</option>
+                      <option value="athena">Muse S/Athena (4 ch + PPG/fNIRS)</option>
+                      <option value="ganglion">OpenBCI Ganglion (4 ch: Ch1-4)</option>
+                      <option value="ultracortex">OpenBCI Ultracortex (16 ch: 10-20)</option>
+                    </select>
+                  </div>
+
+                  <!-- OSC Streams to Enable -->
+                  <div style="margin-bottom: 20px; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                    <h3 style="color: var(--text-primary); margin: 0 0 12px 0;">📤 OSC Streams</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="oscStreamRawEEG" checked style="width: 16px; height: 16px; cursor: pointer; accent-color: #6366f1;">
+                        <span style="font-size: 0.85rem; color: var(--text-primary);">Raw EEG (256Hz)</span>
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="oscStreamBandAbsolute" style="width: 16px; height: 16px; cursor: pointer; accent-color: #f59e0b;">
+                        <span style="font-size: 0.85rem; color: var(--text-primary);">Band Absolute (10Hz)</span>
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="oscStreamBandRelative" style="width: 16px; height: 16px; cursor: pointer; accent-color: #22c55e;">
+                        <span style="font-size: 0.85rem; color: var(--text-primary);">Band Relative (10Hz)</span>
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="oscStreamMotionAccel" style="width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6;">
+                        <span style="font-size: 0.85rem; color: var(--text-primary);">Accelerometer (10Hz)</span>
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="oscStreamMotionGyro" style="width: 16px; height: 16px; cursor: pointer; accent-color: #a855f7;">
+                        <span style="font-size: 0.85rem; color: var(--text-primary);">Gyroscope (10Hz)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                 <!-- Mode Selection -->
+                 <div style="margin-bottom: 20px; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                   <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
+                     <div style="flex: 1;">
+                       <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">OSC Protocol Mode</div>
+                       <div style="font-size: 0.85rem; color: var(--text-secondary);">Select message format for your target DAW/software</div>
+                     </div>
+                     <div style="display: flex; gap: 8px;">
+                       <button id="oscModeA" class="osc-mode-btn active" style="padding: 8px 16px; border-radius: 6px; border: 2px solid #6366f1; background: #6366f120; color: #6366f1; font-weight: 600; cursor: pointer;">
+                         Mode A: Arrays
+                       </button>
+                       <button id="oscModeB" class="osc-mode-btn" style="padding: 8px 16px; border-radius: 6px; border: 2px solid var(--border); background: transparent; color: var(--text-primary); font-weight: 600; cursor: pointer;">
+                         Mode B: Scalar
+                       </button>
+                     </div>
+                   </div>
+
+                   <!-- Mode Info -->
+                   <div id="modeInfoA" style="padding: 8px; background: var(--bg-tertiary); border-radius: 6px; border-left: 3px solid #6366f1;">
+                     <strong style="color: #6366f1;">Mode A — Csound/Bands</strong>
+                     <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">
+                       Multiple float values per message. One message per band with all channels.
+                     </div>
+                   </div>
+                   <div id="modeInfoB" style="display: none; padding: 8px; background: var(--bg-tertiary); border-radius: 6px; border-left: 3px solid #eab308;">
+                     <strong style="color: #eab308;">Mode B — Max/MSP/TouchDesigner</strong>
+                     <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">
+                       Individual scalar messages. One message per electrode per band.
+                     </div>
+                   </div>
+                 </div>
+
+                 <!-- OSC Stream Controls -->
+                 <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+                   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+                     <!-- Port -->
+                     <div>
+                       <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Port</label>
+                       <input id="oscPort" type="number" value="7400" style="width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); font-family: monospace; font-weight: 600;">
+                     </div>
+                     
+                     <!-- Send Rate -->
+                     <div>
+                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                         <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Send Rate</label>
+                         <span id="oscRateVal" style="font-size: 0.8rem; font-weight: 600; color: #6366f1; font-family: monospace;">20</span>
+                       </div>
+                       <input id="oscRate" type="range" min="1" max="100" value="20" style="width: 100%; accent-color: #6366f1; cursor: pointer;">
+                     </div>
+                     
+                     <!-- Smoothing -->
+                     <div>
+                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                         <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Smoothing</label>
+                         <span id="oscSmoothVal" style="font-size: 0.8rem; font-weight: 600; color: #f59e0b; font-family: monospace;">0.10</span>
+                       </div>
+                       <input id="oscSmooth" type="range" min="0" max="1" step="0.01" value="0.1" style="width: 100%; accent-color: #f59e0b; cursor: pointer;">
+                     </div>
+
+                     <!-- Scale -->
+                     <div>
+                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                         <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Scale</label>
+                         <span id="oscScaleVal" style="font-size: 0.8rem; font-weight: 600; color: #22c55e; font-family: monospace;">1.00</span>
+                       </div>
+                       <input id="oscScale" type="range" min="0.1" max="5" step="0.1" value="1" style="width: 100%; accent-color: #22c55e; cursor: pointer;">
+                     </div>
+
+                     <!-- Filtered/Raw Toggle -->
+                     <div>
+                       <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">Data Source</label>
+                       <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                         <input id="oscFiltered" type="checkbox" checked style="width: 16px; height: 16px; cursor: pointer; accent-color: #22c55e;">
+                         <span id="oscFilteredLabel" style="font-size: 0.8rem; font-weight: 600; color: #22c55e; flex: 1; font-family: monospace;">Filtered</span>
+                       </label>
+                     </div>
+
+                     <!-- Status -->
+                     <div>
+                       <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Status</label>
+                       <div style="padding: 6px 8px; background: var(--bg-tertiary); border-radius: 4px; font-family: monospace; color: #22c55e; font-weight: 600; font-size: 0.85rem;">
+                         <span style="display: inline-block; width: 5px; height: 5px; background: #22c55e; border-radius: 50%; margin-right: 4px; animation: pulse 1s infinite;"></span>
+                         LIVE
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+
+                 <!-- Band Selection -->
+                 <div style="margin-bottom: 20px;">
+                   <h3 style="color: var(--text-primary); margin: 0 0 12px 0;">Select Bands</h3>
+                   <div style="display: flex; flex-wrap: wrap; gap: 6px;" id="oscBandSelect">
+                     <!-- Generated by JavaScript -->
+                   </div>
+                 </div>
+
+                 <!-- Channel Selection -->
+                 <div style="margin-bottom: 20px;">
+                   <h3 style="color: var(--text-primary); margin: 0 0 12px 0;">Select Channels</h3>
+                   <div style="display: flex; flex-wrap: wrap; gap: 6px;" id="oscChannelSelect">
+                     <!-- Generated by JavaScript -->
+                   </div>
+                 </div>
+
+                 <!-- Extra Features -->
+                 <div style="margin-bottom: 20px;">
+                   <h3 style="color: var(--text-primary); margin: 0 0 12px 0;">Include Extras</h3>
+                   <div style="display: flex; flex-wrap: wrap; gap: 6px;" id="oscExtrasSelect">
+                     <!-- Generated by JavaScript -->
+                   </div>
+                 </div>
+
+                 <!-- Example Code -->
+                 <div style="margin-bottom: 20px;">
+                   <h3 style="color: var(--text-primary); margin: 0 0 12px 0;">Example Code</h3>
+                   <div id="exampleCodeContainer" style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-x: auto;">
+                     <pre id="exampleCode" style="margin: 0; font-size: 0.8rem; color: var(--text-secondary); font-family: 'Courier New', monospace; line-height: 1.5;"></pre>
+                   </div>
+                 </div>
+
+                 <!-- Live Message Monitor -->
+                 <div style="margin-bottom: 12px;">
+                   <h3 style="color: var(--text-primary); margin: 0 0 8px 0;">Live Messages</h3>
+                   <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;" id="oscMessageStats">
+                     <span style="display: inline-block; width: 6px; height: 6px; background: #22c55e; border-radius: 50%; margin-right: 4px;"></span>
+                     <span id="oscMessageCount">0</span> messages @ <span id="oscRateDisplay">20</span> Hz → localhost:<span id="oscPortDisplay">7400</span>
+                   </div>
+                   <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 8px; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.75rem; line-height: 1.4;" id="oscMessageList">
+                     <div style="color: var(--text-secondary); padding: 8px; text-align: center;">Loading messages...</div>
+                   </div>
+                 </div>
+
+               </div>
+             </div>
+
+               <!-- Statistics Tab -->
+               <div id="stats" class="tab-pane">
+              <div class="stats-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Channel</th>
+                      <th>Min</th>
+                      <th>Max</th>
+                      <th>Mean</th>
+                      <th>StdDev</th>
+                    </tr>
+                  </thead>
+                  <tbody id="statsTableBody">
+                    <!-- Updated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+
+        </main>
+      </div>
+
+      <!-- Settings Modal -->
+    </div>
+
+    <script src="app.js?v=5"></script>
+  </body>
+</html>
