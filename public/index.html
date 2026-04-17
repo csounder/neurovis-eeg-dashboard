@@ -10,7 +10,6 @@
     />
     <link rel="stylesheet" href="style.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   </head>
   <body>
     <div class="app-container">
@@ -18,26 +17,56 @@
       <header class="header">
         <div class="header-content">
           <h1>🧠 Muse EEG Neuro Dashboard PRO</h1>
-          <div class="header-right">
-            <div class="status-indicators">
-              <div class="status" id="oscStatus">
-                <span class="dot"></span>
-                <span>OSC</span>
-              </div>
-              <div class="status" id="wsStatus">
-                <span class="dot"></span>
-                <span>WebSocket</span>
-              </div>
-              <div class="status" id="deviceStatus">
-                <span class="dot"></span>
-                <span>Device</span>
-              </div>
-              <div class="status" id="simulatorStatus">
-                <span class="dot"></span>
-                <span id="simLabel">Live</span>
-              </div>
-            </div>
-          </div>
+           <div class="header-right">
+             <div style="display: flex; align-items: center; gap: 16px;">
+                <!-- Color Palette Selector -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <label style="font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;">🎨 Theme:</label>
+                  <select id="colorPaletteSelector" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace;">
+                    <option value="default">Default (NeuroVis)</option>
+                    <option value="dark">Dark (High Contrast)</option>
+                    <option value="warm">Warm (Sunset)</option>
+                    <option value="cool">Cool (Ocean)</option>
+                    <option value="solarized">Solarized</option>
+                  </select>
+                </div>
+
+                <!-- Device Selector -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <label style="font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;">📱 Device:</label>
+                  <select id="headerDeviceSelector" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace;">
+                    <option value="">No Device</option>
+                  </select>
+                </div>
+
+                <!-- Simulator Toggle -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-secondary); cursor: pointer; white-space: nowrap;">
+                    <input type="checkbox" id="headerSimulatorToggle" style="width: 16px; height: 16px; cursor: pointer;" />
+                    🎲 Sim
+                  </label>
+                </div>
+                
+                <div class="status-indicators">
+                 <div class="status" id="oscStatus">
+                   <span class="dot"></span>
+                   <span>OSC</span>
+                 </div>
+                 <div class="status" id="wsStatus">
+                   <span class="dot"></span>
+                   <span>WebSocket</span>
+                 </div>
+                 <div class="status" id="deviceStatus">
+                   <span class="dot"></span>
+                   <span>Device</span>
+                 </div>
+                 <div class="status" id="simulatorStatus">
+                   <span class="dot"></span>
+                   <span id="simLabel">Live</span>
+                 </div>
+               </div>
+             </div>
+           </div>
         </div>
       </header>
 
@@ -116,299 +145,75 @@
             </div>
           </section>
 
-          <!-- BIOFEEDBACK THRESHOLDS & OSC GATES -->
+          <!-- BIOFEEDBACK THRESHOLDS -->
           <section class="sidebar-section">
             <h3>⚠️ Biofeedback Alerts</h3>
             <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 10px;">
-              Threshold-triggered OSC gates (sends 1 for N ms)
+              Trigger alerts when bands exceed thresholds
             </p>
             
-            <!-- Alpha Alert -->
-            <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; margin-bottom: 10px; border-left: 3px solid #4ecdc4;">
-              <label class="dsp-label" style="margin-bottom: 8px;">
-                🧘 Alpha (Relaxation)
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Alpha Threshold (Relaxation)
                 <div class="dsp-value">
                   <input type="range" id="alphaThreshold" min="0" max="1" step="0.05" value="0.5" class="dsp-slider" />
                   <span id="alphaThresholdValue">0.50</span>
                 </div>
               </label>
-              <label class="dsp-toggle" style="margin-bottom: 6px;">
-                <input type="checkbox" id="alphaAlertOSC" />
-                <span style="font-size: 0.85rem;">Send OSC Gate</span>
-              </label>
-              <label style="font-size: 0.8rem; color: #aaa; display: block; margin-left: 22px;">
-                Duration: <span id="alphaAlertDurationVal">200</span>ms
-                <input type="range" id="alphaAlertDuration" min="50" max="1000" step="50" value="200" style="width: 70%; vertical-align: middle;" />
-              </label>
-              <div id="alphaAlertStatus" style="font-size: 0.7rem; color: #aaa; margin-top: 4px; margin-left: 22px;">—</div>
+              <div id="alphaAlertStatus" style="font-size: 0.7rem; color: #aaa; margin-top: 4px;">—</div>
             </div>
             
-            <!-- Beta Alert -->
-            <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; margin-bottom: 10px; border-left: 3px solid #45b7d1;">
-              <label class="dsp-label" style="margin-bottom: 8px;">
-                🎯 Beta (Focus)
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Beta Threshold (Focus)
                 <div class="dsp-value">
                   <input type="range" id="betaThreshold" min="0" max="1" step="0.05" value="0.4" class="dsp-slider" />
                   <span id="betaThresholdValue">0.40</span>
                 </div>
               </label>
-              <label class="dsp-toggle" style="margin-bottom: 6px;">
-                <input type="checkbox" id="betaAlertOSC" />
-                <span style="font-size: 0.85rem;">Send OSC Gate</span>
-              </label>
-              <label style="font-size: 0.8rem; color: #aaa; display: block; margin-left: 22px;">
-                Duration: <span id="betaAlertDurationVal">200</span>ms
-                <input type="range" id="betaAlertDuration" min="50" max="1000" step="50" value="200" style="width: 70%; vertical-align: middle;" />
-              </label>
-              <div id="betaAlertStatus" style="font-size: 0.7rem; color: #aaa; margin-top: 4px; margin-left: 22px;">—</div>
+              <div id="betaAlertStatus" style="font-size: 0.7rem; color: #aaa; margin-top: 4px;">—</div>
             </div>
             
-            <!-- Delta Alert -->
-            <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; border-left: 3px solid #ff6b6b;">
-              <label class="dsp-label" style="margin-bottom: 8px;">
-                😴 Delta (Drowsiness)
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Delta Threshold (Fatigue)
                 <div class="dsp-value">
                   <input type="range" id="deltaThreshold" min="0" max="1" step="0.05" value="0.6" class="dsp-slider" />
                   <span id="deltaThresholdValue">0.60</span>
                 </div>
               </label>
-              <label class="dsp-toggle" style="margin-bottom: 6px;">
-                <input type="checkbox" id="deltaAlertOSC" />
-                <span style="font-size: 0.85rem;">Send OSC Gate</span>
-              </label>
-              <label style="font-size: 0.8rem; color: #aaa; display: block; margin-left: 22px;">
-                Duration: <span id="deltaAlertDurationVal">200</span>ms
-                <input type="range" id="deltaAlertDuration" min="50" max="1000" step="50" value="200" style="width: 70%; vertical-align: middle;" />
-              </label>
-              <div id="deltaAlertStatus" style="font-size: 0.7rem; color: #aaa; margin-top: 4px; margin-left: 22px;">—</div>
+              <div id="deltaAlertStatus" style="font-size: 0.7rem; color: #aaa; margin-top: 4px;">—</div>
             </div>
-
+            
             <label class="dsp-toggle" style="margin-top: 10px;">
               <input type="checkbox" id="alertSoundsToggle" checked />
-              <span>Enable Audio Beep</span>
+              <span>Enable Alert Sounds</span>
             </label>
           </section>
 
-           <!-- OSC STREAM SELECTION & CONTROL -->
+           <!-- OSC STREAM SELECTION -->
            <section class="sidebar-section">
-             <h3>📡 OSC Streams</h3>
-             <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 10px;">
-               Select, scale & normalize data streams
+             <h3>📡 OSC Streams to Csound</h3>
+             <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 8px;">
+               Select which data streams to send via OSC
              </p>
 
-             <!-- Brain (EEG) -->
-             <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #ff6b6b;">
-               <label class="dsp-toggle" style="margin-bottom: 6px;">
-                 <input type="checkbox" id="oscStreamRawEEG" checked />
-                 <span style="color: #ff6b6b; font-weight: bold;">🧠 EEG (Brain)</span>
-               </label>
-               <div style="font-size: 0.7rem; color: #aaa; margin-left: 22px; margin-top: -2px;">TP9, AF7, AF8, TP10 @ 256Hz</div>
-               <label style="margin-left: 22px; margin-top: 6px; font-size: 0.8rem; display: block;">
-                 Scale: <span id="oscEegScaleVal">1.0</span>x
-                 <input type="range" id="oscEegScale" min="0.1" max="10" step="0.1" value="1" style="width: 60%; vertical-align: middle;" />
-               </label>
-             </div>
-
-             <!-- Brain Effort (fNIRS - Athena) -->
-             <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #4ecdc4;">
-               <label class="dsp-toggle" style="margin-bottom: 6px;">
-                 <input type="checkbox" id="oscStreamMotionFNIRS" />
-                 <span style="color: #4ecdc4; font-weight: bold;">🧠 fNIRS (Effort)</span>
-               </label>
-               <div style="font-size: 0.7rem; color: #aaa; margin-left: 22px; margin-top: -2px;">Bilateral Frontal @ 64Hz</div>
-               <label style="margin-left: 22px; margin-top: 6px; font-size: 0.8rem; display: block;">
-                 Scale: <span id="oscFnirsScaleVal">1.0</span>x
-                 <input type="range" id="oscFnirsScale" min="0.1" max="10" step="0.1" value="1" style="width: 60%; vertical-align: middle;" />
-               </label>
-             </div>
-
-             <!-- Heart (PPG) -->
-             <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #f39c12;">
-               <label class="dsp-toggle" style="margin-bottom: 6px;">
-                 <input type="checkbox" id="oscStreamMotionPPG" />
-                 <span style="color: #f39c12; font-weight: bold;">❤️ PPG (Heart)</span>
-               </label>
-               <div style="font-size: 0.7rem; color: #aaa; margin-left: 22px; margin-top: -2px;">IR, Near-IR, Red @ 64Hz</div>
-               <label style="margin-left: 22px; margin-top: 6px; font-size: 0.8rem; display: block;">
-                 Scale: <span id="oscPpgScaleVal">1.0</span>x
-                 <input type="range" id="oscPpgScale" min="0.1" max="10" step="0.1" value="1" style="width: 60%; vertical-align: middle;" />
-               </label>
-             </div>
-
-             <!-- Motion (Accelerometer) -->
-             <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #45b7d1;">
-               <label class="dsp-toggle" style="margin-bottom: 6px;">
-                 <input type="checkbox" id="oscStreamMotionAccel" />
-                 <span style="color: #45b7d1; font-weight: bold;">💨 Accelerometer</span>
-               </label>
-               <div style="font-size: 0.7rem; color: #aaa; margin-left: 22px; margin-top: -2px;">3-axis (Motion/Breath) @ 52Hz</div>
-               <label style="margin-left: 22px; margin-top: 6px; font-size: 0.8rem; display: block;">
-                 Scale: <span id="oscAccelScaleVal">1.0</span>x
-                 <input type="range" id="oscAccelScale" min="0.1" max="10" step="0.1" value="1" style="width: 60%; vertical-align: middle;" />
-               </label>
-             </div>
-
-             <!-- Rotation (Gyroscope) -->
-             <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #f9ca24;">
-               <label class="dsp-toggle" style="margin-bottom: 6px;">
-                 <input type="checkbox" id="oscStreamMotionGyro" />
-                 <span style="color: #f9ca24; font-weight: bold;">🔄 Gyroscope</span>
-               </label>
-               <div style="font-size: 0.7rem; color: #aaa; margin-left: 22px; margin-top: -2px;">3-axis (Rotation/Posture) @ 52Hz</div>
-               <label style="margin-left: 22px; margin-top: 6px; font-size: 0.8rem; display: block;">
-                 Scale: <span id="oscGyroScaleVal">1.0</span>x
-                 <input type="range" id="oscGyroScale" min="0.1" max="10" step="0.1" value="1" style="width: 60%; vertical-align: middle;" />
-               </label>
-             </div>
-
-             <!-- Band Powers -->
-             <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; border-left: 3px solid #00ff88;">
-               <label class="dsp-toggle" style="margin-bottom: 6px;">
-                 <input type="checkbox" id="oscStreamBandRelative" checked />
-                 <span style="color: #00ff88; font-weight: bold;">📊 Band Powers</span>
-               </label>
-               <div style="font-size: 0.7rem; color: #aaa; margin-left: 22px; margin-top: -2px;">Delta, Theta, Alpha, Beta, Gamma @ 10Hz</div>
-               <label style="margin-left: 22px; margin-top: 6px; font-size: 0.8rem; display: block;">
-                 Scale: <span id="oscBandScaleVal">1.0</span>x
-                 <input type="range" id="oscBandScale" min="0.1" max="10" step="0.1" value="1" style="width: 60%; vertical-align: middle;" />
-               </label>
-             </div>
-
-             <!-- Mind Metrics (Calculated Indices) -->
-             <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #45b7d1;">
-               <label class="dsp-toggle" style="margin-bottom: 6px;">
-                 <input type="checkbox" id="oscStreamAttention" />
-                 <span style="color: #45b7d1; font-weight: bold;">🎯 Attention</span>
-               </label>
-               <div style="font-size: 0.7rem; color: #aaa; margin-left: 22px; margin-top: -2px;">Beta / (Alpha + Theta) @ 10Hz</div>
-               <label style="margin-left: 22px; margin-top: 6px; font-size: 0.8rem; display: block;">
-                 Scale: <span id="oscAttentionScaleVal">1.0</span>x
-                 <input type="range" id="oscAttentionScale" min="0.1" max="10" step="0.1" value="1" style="width: 60%; vertical-align: middle;" />
-               </label>
-             </div>
-
-             <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #4ecdc4;">
-               <label class="dsp-toggle" style="margin-bottom: 6px;">
-                 <input type="checkbox" id="oscStreamMeditation" />
-                 <span style="color: #4ecdc4; font-weight: bold;">🧘 Meditation</span>
-               </label>
-               <div style="font-size: 0.7rem; color: #aaa; margin-left: 22px; margin-top: -2px;">Alpha / (Beta + Gamma) @ 10Hz</div>
-               <label style="margin-left: 22px; margin-top: 6px; font-size: 0.8rem; display: block;">
-                 Scale: <span id="oscMeditationScaleVal">1.0</span>x
-                 <input type="range" id="oscMeditationScale" min="0.1" max="10" step="0.1" value="1" style="width: 60%; vertical-align: middle;" />
-               </label>
-             </div>
-
-             <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 4px; border-left: 3px solid #f39c12;">
-               <label class="dsp-toggle" style="margin-bottom: 6px;">
-                 <input type="checkbox" id="oscStreamDrowsiness" />
-                 <span style="color: #f39c12; font-weight: bold;">😴 Drowsiness</span>
-               </label>
-               <div style="font-size: 0.7rem; color: #aaa; margin-left: 22px; margin-top: -2px;">Delta / (Alpha + Beta) @ 10Hz</div>
-               <label style="margin-left: 22px; margin-top: 6px; font-size: 0.8rem; display: block;">
-                 Scale: <span id="oscDrowsinessScaleVal">1.0</span>x
-                 <input type="range" id="oscDrowsinessScale" min="0.1" max="10" step="0.1" value="1" style="width: 60%; vertical-align: middle;" />
-               </label>
-             </div>
-           </section>
-
-           <!-- OSC OUTPUT SCALER -->
-           <section class="sidebar-section">
-             <h3>📊 OSC Output Scaler</h3>
-             <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 10px;">
-               Post-OSC normalization for Csound
-             </p>
-             <div class="dsp-group">
-               <label style="display: block; font-size: 0.85rem; margin-bottom: 8px;">
-                 <strong>Multiplier:</strong> <span id="oscScalerDisplay" style="color: #00ff88; font-weight: bold;">1.0</span>
-               </label>
-               <input type="range" id="oscScaler" min="0" max="20" step="0.1" value="1" style="width: 100%; cursor: pointer;" />
-             </div>
-             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 8px;">
-               <button id="oscScale01" style="padding: 6px; font-size: 0.75rem; background: #1a1a2e; border: 1px solid #333; color: #aaa; border-radius: 3px; cursor: pointer;">0-1</button>
-               <button id="oscScale03" style="padding: 6px; font-size: 0.75rem; background: #1a1a2e; border: 1px solid #333; color: #aaa; border-radius: 3px; cursor: pointer;">0-3</button>
-               <button id="oscScale010" style="padding: 6px; font-size: 0.75rem; background: #1a1a2e; border: 1px solid #333; color: #aaa; border-radius: 3px; cursor: pointer;">0-10</button>
-               <button id="oscScale020" style="padding: 6px; font-size: 0.75rem; background: #1a1a2e; border: 1px solid #333; color: #aaa; border-radius: 3px; cursor: pointer;">0-20</button>
-               <button id="oscScaleRaw" style="padding: 6px; font-size: 0.75rem; background: #1a1a2e; border: 1px solid #333; color: #aaa; border-radius: 3px; cursor: pointer;">Raw</button>
-               <button id="oscScaleNone" style="padding: 6px; font-size: 0.75rem; background: #1a1a2e; border: 1px solid #333; color: #aaa; border-radius: 3px; cursor: pointer;">None</button>
-             </div>
-             <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #333;">
-               <label class="dsp-toggle">
-                 <input type="checkbox" id="oscAllowNegative" />
-                 <span>Allow Negative Values</span>
-               </label>
-               <p style="font-size: 0.7rem; color: #666; margin-top: 4px;">
-                 ✓ Checked = Send -1 to +1 range<br/>
-                 ✗ Unchecked = Send 0 to +1 range only
-               </p>
-             </div>
-           </section>
-
-           <!-- STREAMING STATUS -->
-           <section class="sidebar-section">
-             <h3>📊 Live Stream Status</h3>
-             <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 10px;">
-               Streams being sent to Csound via OSC
-             </p>
-              <div id="streamingStatus" style="
-                font-size: 0.8rem;
-                background: var(--bg-primary);
-                border-radius: 4px;
-                padding: 8px;
-                border-left: 3px solid var(--border);
-              ">
-               <div style="margin-bottom: 6px;">
-                 <span id="streamEEG" style="color: #888;">✗ Raw EEG</span>
-               </div>
-               <div style="margin-bottom: 6px;">
-                 <span id="streamBandAbs" style="color: #888;">✗ Band Absolute</span>
-               </div>
-               <div style="margin-bottom: 6px;">
-                 <span id="streamBandRel" style="color: #888;">✗ Band Relative</span>
-               </div>
-               <div style="margin-bottom: 6px;">
-                 <span id="streamAccel" style="color: #888;">✗ Accelerometer</span>
-               </div>
-               <div style="margin-bottom: 6px;">
-                 <span id="streamGyro" style="color: #888;">✗ Gyroscope</span>
-               </div>
-               <div>
-                 <span id="streamPPG" style="color: #888;">✗ Heart Rate</span>
-               </div>
-                <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--text-secondary);">
-                 <strong>Output Rate:</strong> <span id="streamOutputRate">256 Hz</span><br>
-                 <strong>Scaling:</strong> <span id="streamScaling">0-1</span>
-               </div>
-             </div>
-           </section>
 
            <!-- DSP Pipeline -->
           <section class="sidebar-section">
             <h3>🔧 DSP Pipeline</h3>
 
-             <!-- Professional Signal Processing - All Enabled by Default -->
-              <div class="dsp-group">
-                <label class="dsp-toggle">
-                  <input type="checkbox" id="detrend" checked />
-                  <span>🔄 Detrend <span style="font-size: 0.7rem; color: var(--text-secondary);">Remove drift</span></span>
-                </label>
-                <label class="dsp-toggle">
-                  <input type="checkbox" id="notchFilter" checked />
-                  <span>🔌 Notch 60Hz <span style="font-size: 0.7rem; color: var(--text-secondary);">Q=30</span></span>
-                </label>
-                <label class="dsp-toggle">
-                  <input type="checkbox" id="bandpassFilter" checked />
-                  <span>📊 Bandpass 1-45 <span style="font-size: 0.7rem; color: var(--text-secondary);">4th-order</span></span>
-                </label>
-                <label class="dsp-toggle">
-                  <input type="checkbox" id="carFilter" checked />
-                  <span>🧠 CAR <span style="font-size: 0.7rem; color: var(--text-secondary);">Reduce noise</span></span>
-                </label>
-                <label class="dsp-toggle">
-                  <input type="checkbox" id="artifactDetection" checked />
-                  <span>⚠️ Artifact Detection <span style="font-size: 0.7rem; color: var(--text-secondary);">Auto-reject</span></span>
-                </label>
-              </div>
+            <!-- Filters -->
+             <div class="dsp-group">
+               <label class="dsp-toggle">
+                 <input type="checkbox" id="notchFilter" checked />
+                 <span>Notch 60Hz <span id="notchStatus" style="font-size: 0.7rem; color: var(--text-secondary);">ON</span></span>
+               </label>
+               <label class="dsp-toggle">
+                 <input type="checkbox" id="bandpassFilter" checked />
+                 <span>Bandpass 1-45 <span id="bandpassStatus" style="font-size: 0.7rem; color: var(--text-secondary);">ON</span></span>
+               </label>
+             </div>
 
              <!-- Smoothing -->
              <div class="dsp-group">
@@ -448,26 +253,16 @@
                </label>
              </div>
 
-             <!-- Artifact Detection Thresholds -->
-             <div class="dsp-group">
-               <label class="dsp-label">
-                 Amplitude Spike (μV)
-                 <div class="dsp-value">
-                   <input type="range" id="amplitudeThreshold" min="50" max="500" step="10" value="100" class="dsp-slider" />
-                   <span id="amplitudeValue">100 μV</span>
-                 </div>
-               </label>
-             </div>
-             
-             <div class="dsp-group">
-               <label class="dsp-label">
-                 Gradient Spike (μV/sample)
-                 <div class="dsp-value">
-                   <input type="range" id="gradientThreshold" min="10" max="200" step="5" value="50" class="dsp-slider" />
-                   <span id="gradientValue">50 μV/s</span>
-                 </div>
-               </label>
-             </div>
+            <!-- Artifact Threshold -->
+            <div class="dsp-group">
+              <label class="dsp-label">
+                Artifact Threshold
+                <div class="dsp-value">
+                  <input type="range" id="artifactSlider" min="50" max="500" step="25" value="100" class="dsp-slider" />
+                  <span id="artifactValue">100</span>
+                </div>
+              </label>
+            </div>
           </section>
 
           <!-- Display Options -->
@@ -507,20 +302,26 @@
             </div>
           </section>
 
-          <!-- Presets -->
-          <section class="sidebar-section">
-            <h3>💾 Presets</h3>
-            <select id="presetSelector" class="dsp-select">
-              <option value="">-- Select Preset --</option>
-              <option value="relaxed">Relaxed (Alpha)</option>
-              <option value="focused">Focused (Beta)</option>
-              <option value="sleep">Sleep (Theta)</option>
-              <option value="clean">Clean (Aggressive)</option>
-              <option value="mindMonitor">Mind Monitor (0-3 Scale)</option>
-              <option value="rawPassThrough">Raw Pass-Through (No Filter/Smooth)</option>
-            </select>
-            <button id="savePresetBtn" class="btn btn-secondary btn-block" style="margin-top: 6px">Save Current</button>
-          </section>
+           <!-- Presets -->
+           <section class="sidebar-section">
+             <h3>💾 Presets</h3>
+             <select id="presetSelector" class="dsp-select">
+               <option value="">-- Select Preset --</option>
+               <option value="relaxed">Relaxed (EMA 0.15)</option>
+               <option value="focused">Focused (Savitzky-Golay)</option>
+               <option value="sleep">Sleep (EMA 0.25)</option>
+               <option value="clean">Clean (Median)</option>
+               <option value="mindMonitor">Mind Monitor (Notch 60Hz)</option>
+               <option value="rawPassThrough">Raw Pass-Through</option>
+               <option value="deltaSuppress">Delta Suppress</option>
+               <option value="artifactRejection">Artifact Rejection</option>
+             </select>
+             <div id="presetDSPInfo" style="margin-top: 8px; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; font-size: 0.75rem; color: var(--text-secondary); display: none;">
+               <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 3px;" id="presetDSPName"></div>
+               <div id="presetDSPParams"></div>
+             </div>
+             <button id="savePresetBtn" class="btn btn-secondary btn-block" style="margin-top: 6px">Save Current</button>
+           </section>
 
           <!-- Performance -->
           <section class="sidebar-section">
@@ -576,22 +377,21 @@
 
         <!-- Main Content -->
          <main class="main-content">
-             <!-- Tab Selection Buttons -->
-             <div style="display: flex; gap: 0; padding: 0; border-bottom: 2px solid var(--border); background: var(--bg-primary);">
-               <button class="tab-btn active" data-tab="raw">📊 Raw EEG</button>
-               <button class="tab-btn" data-tab="bands">🧠 Bands</button>
-                 <button class="tab-btn" data-tab="fft">📡 FFT</button>
-                 <button class="tab-btn" data-tab="fftbands">📊 FFT+Bands</button>
-                 <button class="tab-btn" data-tab="powertl">📊 Power+Timeline</button>
-                  <button class="tab-btn" data-tab="motion">💨 Motion</button>
-                 <button class="tab-btn" data-tab="fnirs">🧠 fNIRS (Athena)</button>
-                  <button class="tab-btn" data-tab="bandgraph">🎨 Live Bands</button>
-                 <button class="tab-btn" data-tab="mindmetrics">🧠 Mind Metrics</button>
-                 <button class="tab-btn" data-tab="quadview">📺 Quad View</button>
+              <!-- Tab Selection Buttons -->
+              <div style="display: flex; gap: 0; padding: 0; border-bottom: 2px solid var(--border); background: var(--bg-primary);">
+                 <button class="tab-btn active" data-tab="raw">📊 Raw EEG</button>
+                 <button class="tab-btn" data-tab="bands">🧠 Bands</button>
+                 <button class="tab-btn" data-tab="fftSpectrum">🎛️ FFT+Bands</button>
+                  <button class="tab-btn" data-tab="brain">🧠 Brain State</button>
+                  <button class="tab-btn" data-tab="mindmetrics">💭 Mind Metrics</button>
+                  <button class="tab-btn" data-tab="quad">⊞ Quad View</button>
                  <button class="tab-btn" data-tab="waterfall">🌊 3D Waterfall</button>
-                 <button class="tab-btn" data-tab="oscmon">📡 OSC Monitor</button>
-                <button class="tab-btn" data-tab="sensors">ℹ️ Sensor Specs</button>
-             </div>
+                 <button class="tab-btn" data-tab="phase">🎯 Phase</button>
+                  <button class="tab-btn" data-tab="ppgHR">❤️ PPG/HR</button>
+                  <button class="tab-btn" data-tab="motion">💨 Motion</button>
+                  <button class="tab-btn" data-tab="dsp">⚙️ DSP Processing</button>
+                  <button class="tab-btn" data-tab="osc">📡 OSC Monitor</button>
+               </div>
              
              <!-- Single Display Area -->
              <div class="tab-content" style="display: block; flex: 1; overflow: auto;">
@@ -621,9 +421,29 @@
               </div>
             </div>
 
-            <!-- Bands Tab -->
-            <div id="bands" class="tab-pane">
-              <div class="bands-grid">
+             <!-- Bands Tab -->
+              <div id="bands" class="tab-pane">
+                <!-- Band Selector Bar -->
+                <div class="selector-bar">
+                  <span class="selector-label">Bands:</span>
+                  <div class="selector-group">
+                    <button class="selector-btn band-delta active" data-band="delta">δ Delta</button>
+                    <button class="selector-btn band-theta" data-band="theta">θ Theta</button>
+                    <button class="selector-btn band-alpha" data-band="alpha">α Alpha</button>
+                    <button class="selector-btn band-beta" data-band="beta">β Beta</button>
+                    <button class="selector-btn band-gamma" data-band="gamma">γ Gamma</button>
+                  </div>
+                  <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
+                </div>
+                
+                <!-- Description Box -->
+                <div style="padding: 12px 16px; background: var(--bg-tertiary); border-left: 3px solid #f59e0b; margin: 12px 16px 0 16px; border-radius: 4px;">
+                  <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                    <strong style="color: #f59e0b;">🎨 Band Power:</strong> Real-time oscillatory power in five frequency bands. <strong style="color: #22c55e;">Green</strong> = high power (dominant brainwave), <strong style="color: #ef4444;">Red</strong> = low power. Delta (1-4Hz) = deep sleep, Theta (4-8Hz) = drowsy, Alpha (8-12Hz) = relaxed/meditative, Beta (12-30Hz) = focused thinking, Gamma (30-60Hz) = peak mental performance.
+                  </p>
+                </div>
+
+                <div class="bands-grid">
                 <div class="band-display">
                   <h3>Band Powers (Ch1)</h3>
                   <div class="band-bars">
@@ -664,491 +484,647 @@
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
+               </div>
+             </div>
 
-              <!-- FFT Tab -->
-              <div id="fft" class="tab-pane">
-                <div class="chart-container">
-                  <h3>📊 Frequency Spectrum (Band Powers)</h3>
-                  <canvas id="fftChart"></canvas>
-                </div>
-              </div>
-
-               <!-- Power+Timeline Tab (from NeuroVis) -->
-               <div id="powertl" class="tab-pane">
-                 <div class="chart-container">
-                   <h3>📊 Band Power + Time History</h3>
-                   <p class="sensor-info">Band power bars (left) + scrolling time history (right) for all channels</p>
-                   <canvas id="powerTimelineCanvas" style="width: 100%; height: 400px;"></canvas>
+             <!-- Brain State & Calibration Tab -->
+             <div id="brain" class="tab-pane">
+               <div class="chart-container" style="max-width: 600px;">
+                 <h3>🧠 Brain State & Calibration</h3>
+                 <p class="sensor-info">Real-time brain state classification (Aroused/Focused/Relaxed/Drowsy/Neutral) with personalized z-score calibration. Calibrate for 90 seconds to establish your baseline.</p>
+                 
+                 <!-- Brain State Display -->
+                 <div style="margin-top: 16px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                   <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px;">
+                     <!-- State Label -->
+                     <div id="brainStateLabel" style="padding: 12px 24px; border-radius: 8px; font-size: 1.4rem; font-weight: 800; background: #6b728020; color: #6b7280; border: 2px solid #6b728040; min-width: 180px; text-align: center;">
+                       Neutral
+                     </div>
+                     
+                     <!-- Calibration Status -->
+                     <div style="flex: 1;">
+                       <div id="calibrationStatus" style="font-size: 0.85rem; font-weight: 600; color: #888; margin-bottom: 6px;">
+                         Not calibrated — start calibration
+                       </div>
+                       <div id="calibrationProgressBar" style="height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;">
+                         <div id="calibrationProgressFill" style="height: 100%; width: 0%; background: #fbbf24; border-radius: 2px; transition: width 0.5s;"></div>
+                       </div>
+                     </div>
+                   </div>
+                   
+                    <!-- Calibration Instructions (from neurofeedback literature) -->
+                    <div id="calibrationInstructions" style="padding: 12px; background: #1a3a3a; border: 1px solid #2a5a5a; border-radius: 6px; margin-bottom: 12px;">
+                      <div style="font-size: 0.9rem; font-weight: 600; color: #4dd0e1; margin-bottom: 10px;">📋 Calibration Instructions (90 seconds)</div>
+                      
+                      <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6;">
+                        <div style="margin-bottom: 8px;">
+                          <strong style="color: #4dd0e1;">✓ DO:</strong>
+                          <ul style="margin: 4px 0 0 20px; padding: 0;">
+                            <li>Sit upright in a comfortable position (feet flat on ground)</li>
+                            <li><strong>Close your eyes</strong> — this stabilizes your baseline EEG</li>
+                            <li><strong>Breathe slowly &amp; deeply</strong> — 4 sec inhale, 6 sec exhale helps relax neural activity</li>
+                            <li>Relax your jaw, shoulders, and facial muscles</li>
+                            <li>Keep your body still — movement creates electrical artifacts</li>
+                            <li>Let your mind settle into a calm, neutral state (or your baseline state)</li>
+                          </ul>
+                        </div>
+                        
+                        <div style="margin-bottom: 8px;">
+                          <strong style="color: #ef5350;">✗ AVOID:</strong>
+                          <ul style="margin: 4px 0 0 20px; padding: 0;">
+                            <li>Clenching teeth or jaw tension</li>
+                            <li>Fidgeting, tapping, or sudden movements</li>
+                            <li>Intense thinking, mental math, or problem-solving</li>
+                            <li>Opening eyes or looking around</li>
+                            <li>Talking or using other devices</li>
+                          </ul>
+                        </div>
+                        
+                        <div style="padding: 8px; background: #0a2020; border-radius: 4px; border-left: 3px solid #4dd0e1;">
+                          <strong style="color: #4dd0e1;">💡 Why?</strong> Neurofeedback research shows that a <strong>relaxed, eyes-closed baseline</strong> with minimal movement produces the cleanest EEG calibration, enabling more accurate personalized metrics.
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <!-- Calibration Buttons -->
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                      <button id="calibrationStartBtn" class="btn btn-small" style="background: #fbbf2420; color: #fbbf24; border: 1px solid #fbbf24;">
+                        ▶ Start Calibration
+                      </button>
+                      <button id="calibrationStopBtn" class="btn btn-small" style="background: #ef444420; color: #ef4444; border: 1px solid #ef4444; display: none;">
+                        ■ Stop
+                      </button>
+                      <button id="calibrationResetBtn" class="btn btn-small" style="background: transparent; color: #888; border: 1px solid #444; display: none;">
+                        ↻ Reset
+                      </button>
+                    </div>
+                   
+                   <!-- Z-Score Bars (shown after calibration) -->
+                   <div id="zscoreBars" style="display: none;">
+                     <div style="font-size: 0.85rem; font-weight: 600; color: #ccc; margin-bottom: 8px;">
+                       Z-Scores (Personalized)
+                     </div>
+                     <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;">
+                       <div style="text-align: center;">
+                         <div style="height: 50px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
+                           <div id="zscore-delta" style="width: 16px; height: 20px; background: #6366f160; border: 1px solid #6366f1; border-radius: 2px;"></div>
+                         </div>
+                         <div style="font-size: 0.75rem; font-weight: 600; color: #6366f1;" id="zscore-delta-val">0.0</div>
+                         <div style="font-size: 0.65rem; color: #888;">Delta</div>
+                       </div>
+                       <div style="text-align: center;">
+                         <div style="height: 50px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
+                           <div id="zscore-theta" style="width: 16px; height: 20px; background: #f5940160; border: 1px solid #f59e0b; border-radius: 2px;"></div>
+                         </div>
+                         <div style="font-size: 0.75rem; font-weight: 600; color: #f59e0b;" id="zscore-theta-val">0.0</div>
+                         <div style="font-size: 0.65rem; color: #888;">Theta</div>
+                       </div>
+                       <div style="text-align: center;">
+                         <div style="height: 50px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
+                           <div id="zscore-alpha" style="width: 16px; height: 20px; background: #22c55e60; border: 1px solid #22c55e; border-radius: 2px;"></div>
+                         </div>
+                         <div style="font-size: 0.75rem; font-weight: 600; color: #22c55e;" id="zscore-alpha-val">0.0</div>
+                         <div style="font-size: 0.65rem; color: #888;">Alpha</div>
+                       </div>
+                       <div style="text-align: center;">
+                         <div style="height: 50px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
+                           <div id="zscore-beta" style="width: 16px; height: 20px; background: #3b82f660; border: 1px solid #3b82f6; border-radius: 2px;"></div>
+                         </div>
+                         <div style="font-size: 0.75rem; font-weight: 600; color: #3b82f6;" id="zscore-beta-val">0.0</div>
+                         <div style="font-size: 0.65rem; color: #888;">Beta</div>
+                       </div>
+                       <div style="text-align: center;">
+                         <div style="height: 50px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
+                           <div id="zscore-gamma" style="width: 16px; height: 20px; background: #ef444460; border: 1px solid #ef4444; border-radius: 2px;"></div>
+                         </div>
+                         <div style="font-size: 0.75rem; font-weight: 600; color: #ef4444;" id="zscore-gamma-val">0.0</div>
+                         <div style="font-size: 0.65rem; color: #888;">Gamma</div>
+                       </div>
+                     </div>
+                   </div>
                  </div>
                </div>
+              </div>
 
-               <!-- FFT+Bands Combo Tab (from NeuroVis) -->
-               <div id="fftbands" class="tab-pane">
-                 <div class="chart-container">
-                   <h3>📊 FFT Spectrum + Band Power</h3>
-                   <p class="sensor-info">Left: Frequency spectrum with band regions | Right: Band power bars + sparklines</p>
-                   <canvas id="fftBandsCanvas" style="width: 100%; height: 350px;"></canvas>
-                 </div>
-               </div>
+               <!-- Mind Metrics Tab -->
+               <div id="mindmetrics" class="tab-pane">
+                 <div style="padding: 20px;">
+                   <h2 style="margin-top: 0; color: var(--text-primary); display: flex; align-items: center; gap: 10px;">
+                     💭 Mind Metrics — Attention, Meditation & Drowsiness
+                   </h2>
+                   
+                   <!-- Calibration Status Hint -->
+                   <div style="padding: 12px; background: var(--bg-tertiary); border-left: 4px solid #f59e0b; margin-bottom: 16px; border-radius: 4px;">
+                     <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary);">
+                       📌 <strong id="metricsCalibStatus">Uncalibrated — showing raw metrics</strong>
+                     </p>
+                   </div>
+                   
+                   <!-- 3 Metric Cards -->
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                    <!-- Attention Card -->
+                    <div style="padding: 20px; background: var(--bg-secondary); border: 2px solid #f59e0b; border-radius: 8px; border-left: 8px solid #f59e0b;">
+                      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <span style="font-size: 1.5rem;">🎯</span>
+                        <span style="font-size: 0.9rem; font-weight: 700; color: #f59e0b; text-transform: uppercase; letter-spacing: 0.5px;">Attention</span>
+                      </div>
+                      <div style="font-size: 2.5rem; font-weight: 700; color: #f59e0b; margin-bottom: 8px;" id="metricAttention">0.0</div>
+                      <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">Beta / (Alpha + Theta)</div>
+                      <div style="padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border-left: 3px solid #22c55e;">
+                        <div style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: #22c55e; font-weight: 600;">
+                          <span style="display: inline-block; width: 6px; height: 6px; background: #22c55e; border-radius: 50%;"></span>
+                          <span id="attentionStatus">—</span>
+                        </div>
+                      </div>
+                    </div>
 
-               <!-- Quad View Tab -->
-               <div id="quadview" class="tab-pane">
-                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px;">
-                   <div class="chart-container" style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border: 2px solid var(--border);">
-                     <h3 style="margin-top: 0; color: #00ff88;">📊 Raw EEG</h3>
-                     <canvas id="quadEegChart" style="width: 100%; height: 250px;"></canvas>
-                   </div>
-                   <div class="chart-container" style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border: 2px solid var(--border);">
-                     <h3 style="margin-top: 0; color: #00ff88;">🧠 Bands</h3>
-                     <canvas id="quadBandsChart" style="width: 100%; height: 250px;"></canvas>
-                   </div>
-                   <div class="chart-container" style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border: 2px solid var(--border);">
-                     <h3 style="margin-top: 0; color: #00ff88;">📡 FFT+Bands</h3>
-                     <canvas id="quadFFTBandsChart" style="width: 100%; height: 250px;"></canvas>
-                   </div>
-                   <div class="chart-container" style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border: 2px solid var(--border);">
-                     <h3 style="margin-top: 0; color: #00ff88;">📊 Power+Timeline</h3>
-                     <canvas id="quadPowerTimelineChart" style="width: 100%; height: 250px;"></canvas>
-                   </div>
+                    <!-- Meditation Card -->
+                    <div style="padding: 20px; background: var(--bg-secondary); border: 2px solid #22c55e; border-radius: 8px; border-left: 8px solid #22c55e;">
+                      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <span style="font-size: 1.5rem;">🧘</span>
+                        <span style="font-size: 0.9rem; font-weight: 700; color: #22c55e; text-transform: uppercase; letter-spacing: 0.5px;">Meditation</span>
+                      </div>
+                      <div style="font-size: 2.5rem; font-weight: 700; color: #22c55e; margin-bottom: 8px;" id="metricMeditation">0.0</div>
+                      <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">Alpha / (Beta + Gamma)</div>
+                      <div style="padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border-left: 3px solid #22c55e;">
+                        <div style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: #22c55e; font-weight: 600;">
+                          <span style="display: inline-block; width: 6px; height: 6px; background: #22c55e; border-radius: 50%;"></span>
+                          <span id="meditationStatus">—</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Drowsiness Card -->
+                    <div style="padding: 20px; background: var(--bg-secondary); border: 2px solid #ef4444; border-radius: 8px; border-left: 8px solid #ef4444;">
+                      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <span style="font-size: 1.5rem;">😴</span>
+                        <span style="font-size: 0.9rem; font-weight: 700; color: #ef4444; text-transform: uppercase; letter-spacing: 0.5px;">Drowsiness</span>
+                      </div>
+                      <div style="font-size: 2.5rem; font-weight: 700; color: #ef4444; margin-bottom: 8px;" id="metricDrowsiness">0.0</div>
+                      <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">Delta / (Alpha + Beta)</div>
+                      <div style="padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border-left: 3px solid #22c55e;">
+                        <div style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: #22c55e; font-weight: 600;">
+                          <span style="display: inline-block; width: 6px; height: 6px; background: #22c55e; border-radius: 50%;"></span>
+                          <span id="drowsinessStatus">—</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Timeline Charts -->
+                  <div style="display: grid; grid-template-columns: 1fr; gap: 16px;">
+                    <!-- Attention Timeline -->
+                    <div style="padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                      <h3 style="margin: 0 0 12px 0; color: #f59e0b; display: flex; align-items: center; gap: 8px;">
+                        <span>🎯</span> Attention Over Time
+                      </h3>
+                      <canvas id="metricsAttentionChart" width="1000" height="200" style="width:100%;height:180px;border-radius:4px;background:#0d1117;"></canvas>
+                    </div>
+
+                    <!-- Meditation Timeline -->
+                    <div style="padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                      <h3 style="margin: 0 0 12px 0; color: #22c55e; display: flex; align-items: center; gap: 8px;">
+                        <span>🧘</span> Meditation Over Time
+                      </h3>
+                      <canvas id="metricsMeditationChart" width="1000" height="200" style="width:100%;height:180px;border-radius:4px;background:#0d1117;"></canvas>
+                    </div>
+
+                    <!-- Drowsiness Timeline -->
+                    <div style="padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                      <h3 style="margin: 0 0 12px 0; color: #ef4444; display: flex; align-items: center; gap: 8px;">
+                        <span>😴</span> Drowsiness Over Time
+                      </h3>
+                      <canvas id="metricsDrowsinessChart" width="1000" height="200" style="width:100%;height:180px;border-radius:4px;background:#0d1117;"></canvas>
+                    </div>
                   </div>
                 </div>
-
-                <!-- 3D Waterfall Tab (NeuroVis-inspired) -->
-                <div id="waterfall" class="tab-pane">
-                  <div style="padding: 16px;">
-                    <h2 style="color: #00ff88; margin-bottom: 12px;">🌊 3D Frequency Waterfall Spectrogram</h3>
-                    <p style="color: #aaa; font-size: 0.9rem; margin-bottom: 12px;">Real-time FFT magnitude over time (left=past, right=now) | Colors: band powers</p>
-                    <div id="waterfallContainer" style="width: 100%; height: 500px; background: #000000; border: 2px solid #00ff88; border-radius: 4px; position: relative;">
-                      <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; font-size: 0.9rem;">Initializing 3D view...</div>
-                    </div>
-                    <div style="margin-top: 12px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
-                      <button id="waterfallRotateLeftBtn" class="btn btn-secondary" style="font-size: 0.8rem;">⟲ Rotate L</button>
-                      <button id="waterfallRotateRightBtn" class="btn btn-secondary" style="font-size: 0.8rem;">Rotate R ⟳</button>
-                      <button id="waterfallZoomInBtn" class="btn btn-secondary" style="font-size: 0.8rem;">🔍 Zoom +</button>
-                      <button id="waterfallZoomOutBtn" class="btn btn-secondary" style="font-size: 0.8rem;">Zoom −</button>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- OSC Monitor Tab -->
-               <div id="oscmon" class="tab-pane">
-                 <div style="padding: 16px;">
-                   <h2 style="color: #00ff88; margin-bottom: 16px;">📡 OSC Message Monitor</h2>
-                   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
-                     <div>
-                       <label style="font-size: 0.85rem; color: #aaa;">🔌 OSC Output Target</label>
-                       <div style="font-size: 0.9rem; color: #00ff88; font-weight: bold; margin-top: 4px;">127.0.0.1:7400</div>
-                     </div>
-                     <div>
-                       <label style="font-size: 0.85rem; color: #aaa;">📤 Messages Sent</label>
-                       <div style="font-size: 0.9rem; color: #00ff88; font-weight: bold; margin-top: 4px;" id="oscMonitorCount">0</div>
-                     </div>
-                   </div>
-                   <div style="background: #0a0e27; border: 2px solid #00ff88; border-radius: 4px; padding: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; color: #00ff88; max-height: 400px; overflow-y: auto;">
-                     <div id="oscMonitorLog" style="min-height: 300px;">
-                       <div style="color: #666;">Waiting for OSC messages...</div>
-                     </div>
-                   </div>
-                   <div style="margin-top: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
-                     <button id="oscMonClearBtn" class="btn btn-secondary" style="font-size: 0.85rem;">Clear Log</button>
-                     <label style="display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; cursor: pointer;">
-                       <input type="checkbox" id="oscMonAutoScroll" checked />
-                       <span style="font-size: 0.85rem;">Auto Scroll</span>
-                     </label>
-                     <label style="display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; cursor: pointer;">
-                       <input type="checkbox" id="oscMonPause" />
-                       <span style="font-size: 0.85rem;">Pause</span>
-                     </label>
-                   </div>
-                 </div>
-               </div>
-
-               <!-- Motion Tab -->
-             <div id="motion" class="tab-pane">
-               <div class="chart-grid">
-                 <div class="chart-container">
-                   <h3>💨 Accelerometer (10 Hz)</h3>
-                   <p class="sensor-info">X, Y, Z axes in g (gravity units)</p>
-                   <canvas id="accelChart"></canvas>
-                   <div style="margin-top: 8px; font-size: 0.85rem;">
-                     <div>X: <span id="accelXValue">0.00</span> g</div>
-                     <div>Y: <span id="accelYValue">0.00</span> g</div>
-                     <div>Z: <span id="accelZValue">0.00</span> g</div>
-                     <div style="margin-top: 6px; padding: 6px; background: var(--bg-tertiary); border-radius: 3px; color: #aaa; font-size: 0.75rem;">
-                       Range: <span id="accelRange">—</span>
-                     </div>
-                   </div>
-                 </div>
-                 <div class="chart-container">
-                   <h3>🔄 Gyroscope (10 Hz)</h3>
-                   <p class="sensor-info">Rotation rates around X, Y, Z axes</p>
-                   <canvas id="gyroChart"></canvas>
-                   <div style="margin-top: 8px; font-size: 0.85rem;">
-                     <div>X: <span id="gyroXValue">0.00</span> °/s</div>
-                     <div>Y: <span id="gyroYValue">0.00</span> °/s</div>
-                     <div>Z: <span id="gyroZValue">0.00</span> °/s</div>
-                     <div style="margin-top: 6px; padding: 6px; background: var(--bg-tertiary); border-radius: 3px; color: #aaa; font-size: 0.75rem;">
-                       Range: <span id="gyroRange">—</span>
-                     </div>
-                   </div>
-                 </div>
-                 <div class="chart-container">
-                   <h3>❤️ Heart Rate / PPG (1 Hz)</h3>
-                   <p class="sensor-info">Red, Green, Infrared LED readings</p>
-                   <canvas id="ppgChart"></canvas>
-                   <div style="margin-top: 8px; font-size: 0.85rem;">
-                     <div>Red: <span id="ppgRedValue">0</span></div>
-                     <div>Green: <span id="ppgGreenValue">0</span></div>
-                     <div>IR: <span id="ppgIRValue">0</span></div>
-                     <div style="margin-top: 6px; padding: 6px; background: var(--bg-tertiary); border-radius: 3px; color: #aaa; font-size: 0.75rem;">
-                       Range: <span id="ppgRange">—</span>
-                     </div>
-                   </div>
-                 </div>
-                 <div class="chart-container">
-                   <h3>🔋 Battery Status</h3>
-                   <p class="sensor-info">Device battery level and health</p>
-                   <div style="padding: 20px; text-align: center;">
-                     <div style="font-size: 3rem; margin-bottom: 10px;" id="batteryPercentageDisplay">—</div>
-                     <div style="font-size: 1.2rem;" id="batteryStatusDisplay">Awaiting data...</div>
-                   </div>
-                 </div>
-               </div>
               </div>
 
-              <!-- fNIRS Tab (Athena only) -->
-              <div id="fnirs" class="tab-pane">
-                <div class="chart-grid">
+                 <!-- FFT+Bands Tab (NeuroVis-style) -->
+                <div id="fftSpectrum" class="tab-pane">
+                 <!-- Channel Selector Bar -->
+                 <div class="selector-bar">
+                   <span class="selector-label">Channels:</span>
+                   <div class="selector-group">
+                     <button class="selector-btn active" data-channel="TP9">TP9</button>
+                     <button class="selector-btn" data-channel="AF7">AF7</button>
+                     <button class="selector-btn" data-channel="AF8">AF8</button>
+                     <button class="selector-btn" data-channel="TP10">TP10</button>
+                   </div>
+                   <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
+                 </div>
                   <div class="chart-container">
-                    <h3>🧠 fNIRS - Brain Oxygenation (Athena)</h3>
-                    <p class="sensor-info">Functional Near-Infrared Spectroscopy: measures prefrontal cortex blood flow</p>
-                    <canvas id="fnirsPowerChart"></canvas>
-                    <div style="margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.9rem;">
-                      <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 4px; border-left: 4px solid #ff6b6b;">
-                        <div style="color: #aaa; font-size: 0.8rem;">HbO₂ (Oxygenated)</div>
-                        <div id="fnirshbo2Value" style="font-size: 1.5rem; color: #ff6b6b; font-weight: bold;">—</div>
-                      </div>
-                      <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 4px; border-left: 4px solid #4ecdc4;">
-                        <div style="color: #aaa; font-size: 0.8rem;">HbR (Deoxygenated)</div>
-                        <div id="fnirshbrValue" style="font-size: 1.5rem; color: #4ecdc4; font-weight: bold;">—</div>
-                      </div>
-                      <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 4px; border-left: 4px solid #f9ca24;">
-                        <div style="color: #aaa; font-size: 0.8rem;">HbTotal</div>
-                        <div id="fnirshbtotalValue" style="font-size: 1.5rem; color: #f9ca24; font-weight: bold;">—</div>
-                      </div>
-                      <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 4px; border-left: 4px solid #45b7d1;">
-                        <div style="color: #aaa; font-size: 0.8rem;">Net Brain Load</div>
-                        <div id="fnirsBrainLoadValue" style="font-size: 1.5rem; color: #45b7d1; font-weight: bold;">—</div>
-                      </div>
+                    <h3>🎛️ FFT Spectrum + Power Bands</h3>
+                    <div style="padding: 12px 16px; background: var(--bg-tertiary); border-left: 3px solid #3b82f6; margin-bottom: 12px; border-radius: 4px;">
+                      <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                        <strong style="color: #3b82f6;">📊 FFT Spectrum + Power Bands:</strong> <strong>Left pane:</strong> Real-time frequency spectrum (0–60 Hz) showing where energy is distributed. Colored regions mark band boundaries (δ θ α β γ). <strong>Right pane:</strong> All 5 band powers as animated bars + tiny history sparklines. Use the channel selector (TP9/AF7/AF8/TP10) to view different electrode sites.
+                      </p>
                     </div>
+                   <canvas id="fftSpectrumCanvas" width="1100" height="350" style="width:100%;height:300px;border-radius:8px;background:#0d1117;"></canvas>
+                 </div>
+              </div>
+
+              <!-- Quad View Tab (4 panes - each selectable) -->
+              <div id="quad" class="tab-pane">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(220px, 1fr) minmax(220px, 1fr); gap: 12px; min-height: 520px; padding: 12px;">
+                  <!-- Quadrant A (Top-Left) -->
+                  <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+                    <div style="padding: 6px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-tertiary); flex-shrink: 0;">
+                      <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">A</span>
+                      <select id="quadPanelA" style="padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace; max-width: 140px;">
+                        <option value="fftSpectrum">FFT+Bands</option>
+                        <option value="waterfall">3D Waterfall</option>
+                        <option value="phase">Phase Polar</option>
+                        <option value="ppgHR">PPG/HR</option>
+                      </select>
+                    </div>
+                    <div style="padding: 8px; flex: 1; overflow: auto; min-height: 0;" id="quadPanelA-content"></div>
+                  </div>
+
+                  <!-- Quadrant B (Top-Right) -->
+                  <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+                    <div style="padding: 6px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-tertiary); flex-shrink: 0;">
+                      <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">B</span>
+                      <select id="quadPanelB" style="padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace; max-width: 140px;">
+                        <option value="waterfall">3D Waterfall</option>
+                        <option value="fftSpectrum">FFT+Bands</option>
+                        <option value="phase">Phase Polar</option>
+                        <option value="ppgHR">PPG/HR</option>
+                      </select>
+                    </div>
+                    <div style="padding: 8px; flex: 1; overflow: auto; min-height: 0;" id="quadPanelB-content"></div>
+                  </div>
+
+                  <!-- Quadrant C (Bottom-Left) -->
+                  <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+                    <div style="padding: 6px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-tertiary); flex-shrink: 0;">
+                      <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">C</span>
+                      <select id="quadPanelC" style="padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace; max-width: 140px;">
+                        <option value="phase">Phase Polar</option>
+                        <option value="fftSpectrum">FFT+Bands</option>
+                        <option value="waterfall">3D Waterfall</option>
+                        <option value="ppgHR">PPG/HR</option>
+                      </select>
+                    </div>
+                    <div style="padding: 8px; flex: 1; overflow: auto; min-height: 0;" id="quadPanelC-content"></div>
+                  </div>
+
+                  <!-- Quadrant D (Bottom-Right) -->
+                  <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+                    <div style="padding: 6px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-tertiary); flex-shrink: 0;">
+                      <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">D</span>
+                      <select id="quadPanelD" style="padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace; max-width: 140px;">
+                        <option value="ppgHR">PPG/HR</option>
+                        <option value="fftSpectrum">FFT+Bands</option>
+                        <option value="waterfall">3D Waterfall</option>
+                        <option value="phase">Phase Polar</option>
+                      </select>
+                    </div>
+                    <div style="padding: 8px; flex: 1; overflow: auto; min-height: 0;" id="quadPanelD-content"></div>
                   </div>
                 </div>
               </div>
 
-               <!-- Live Scrolling Band Graph Tab -->
-              <div id="bandgraph" class="tab-pane">
-                <div style="padding: 16px;">
-                  <h2 style="color: #00ff88; margin-bottom: 16px;">🎨 Live Band Powers - Scrolling Oscilloscope</h2>
-                  
-                  <!-- Band Selection Toggles -->
-                  <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-secondary); border-radius: 4px;">
-                    <p style="font-size: 0.9rem; color: #aaa; margin: 0 0 10px 0;">Select bands to display:</p>
-                    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="bandToggleDelta" checked />
-                        <span style="color: #ff6b6b; font-weight: bold;">■ Delta (1-4Hz)</span>
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="bandToggleTheta" checked />
-                        <span style="color: #ffa500; font-weight: bold;">■ Theta (4-8Hz)</span>
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="bandToggleAlpha" checked />
-                        <span style="color: #4ecdc4; font-weight: bold;">■ Alpha (8-12Hz)</span>
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="bandToggleBeta" checked />
-                        <span style="color: #45b7d1; font-weight: bold;">■ Beta (12-30Hz)</span>
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="bandToggleGamma" checked />
-                        <span style="color: #f39c12; font-weight: bold;">■ Gamma (30-44Hz)</span>
-                      </label>
-                    </div>
+              <!-- 3D Waterfall Tab -->
+              <div id="waterfall" class="tab-pane">
+                <!-- Band Selector Bar -->
+                <div class="selector-bar">
+                  <span class="selector-label">Band:</span>
+                  <div class="selector-group">
+                    <button class="selector-btn band-delta active" data-band="delta">δ Delta</button>
+                    <button class="selector-btn band-theta" data-band="theta">θ Theta</button>
+                    <button class="selector-btn band-alpha" data-band="alpha">α Alpha</button>
+                    <button class="selector-btn band-beta" data-band="beta">β Beta</button>
+                    <button class="selector-btn band-gamma" data-band="gamma">γ Gamma</button>
                   </div>
-
-                  <!-- Scrolling Graph Canvas -->
-                  <div style="background: #0a0e27; border: 2px solid #00ff88; border-radius: 4px; overflow: hidden;">
-                    <canvas id="bandGraphCanvas" style="display: block; width: 100%; background: #000000;"></canvas>
-                  </div>
-
-                  <!-- Stats Display Below Graph -->
-                  <div style="margin-top: 16px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;">
-                    <div id="bandStatDelta" style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border-left: 3px solid #ff6b6b;">
-                      <div style="font-size: 0.8rem; color: #aaa;">Delta</div>
-                      <div id="bandStatDeltaVal" style="font-size: 1.4rem; color: #ff6b6b; font-weight: bold;">—</div>
-                    </div>
-                    <div id="bandStatTheta" style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border-left: 3px solid #ffa500;">
-                      <div style="font-size: 0.8rem; color: #aaa;">Theta</div>
-                      <div id="bandStatThetaVal" style="font-size: 1.4rem; color: #ffa500; font-weight: bold;">—</div>
-                    </div>
-                    <div id="bandStatAlpha" style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border-left: 3px solid #4ecdc4;">
-                      <div style="font-size: 0.8rem; color: #aaa;">Alpha</div>
-                      <div id="bandStatAlphaVal" style="font-size: 1.4rem; color: #4ecdc4; font-weight: bold;">—</div>
-                    </div>
-                    <div id="bandStatBeta" style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border-left: 3px solid #45b7d1;">
-                      <div style="font-size: 0.8rem; color: #aaa;">Beta</div>
-                      <div id="bandStatBetaVal" style="font-size: 1.4rem; color: #45b7d1; font-weight: bold;">—</div>
-                    </div>
-                    <div id="bandStatGamma" style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border-left: 3px solid #f39c12;">
-                      <div style="font-size: 0.8rem; color: #aaa;">Gamma</div>
-                      <div id="bandStatGammaVal" style="font-size: 1.4rem; color: #f39c12; font-weight: bold;">—</div>
-                    </div>
-                  </div>
+                  <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
                 </div>
-              </div>
-
-              <!-- Mind Metrics Tab (Attention & Meditation) -->
-              <div id="mindmetrics" class="tab-pane">
-                <div style="padding: 16px;">
-                  <h2 style="color: #00ff88; margin-bottom: 20px;">🧠 Mind Metrics - Attention, Meditation & Drowsiness</h2>
-                  
-                  <!-- Gauges Section -->
-                  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px;">
-                    <!-- Attention Gauge -->
-                    <div style="background: var(--bg-secondary); padding: 16px; border-radius: 4px; border-left: 4px solid #45b7d1; text-align: center;">
-                      <h3 style="color: #45b7d1; margin-top: 0;">🎯 Attention</h3>
-                      <div style="font-size: 3rem; font-weight: bold; margin: 16px 0;">
-                        <span id="attentionScore" style="color: #45b7d1;">—</span>
-                      </div>
-                      <div style="font-size: 0.9rem; color: #aaa; margin-top: 12px;">
-                        Beta / (Alpha + Theta)
-                      </div>
-                      <div id="attentionDesc" style="font-size: 0.8rem; color: #ccc; margin-top: 12px; padding: 8px; background: var(--bg-tertiary); border-radius: 3px;">—</div>
-                    </div>
-
-                    <!-- Meditation Gauge -->
-                    <div style="background: var(--bg-secondary); padding: 16px; border-radius: 4px; border-left: 4px solid #4ecdc4; text-align: center;">
-                      <h3 style="color: #4ecdc4; margin-top: 0;">🧘 Meditation</h3>
-                      <div style="font-size: 3rem; font-weight: bold; margin: 16px 0;">
-                        <span id="meditationScore" style="color: #4ecdc4;">—</span>
-                      </div>
-                      <div style="font-size: 0.9rem; color: #aaa; margin-top: 12px;">
-                        Alpha / (Beta + Gamma)
-                      </div>
-                      <div id="meditationDesc" style="font-size: 0.8rem; color: #ccc; margin-top: 12px; padding: 8px; background: var(--bg-tertiary); border-radius: 3px;">—</div>
-                    </div>
-
-                    <!-- Drowsiness Gauge -->
-                    <div style="background: var(--bg-secondary); padding: 16px; border-radius: 4px; border-left: 4px solid #f39c12; text-align: center;">
-                      <h3 style="color: #f39c12; margin-top: 0;">😴 Drowsiness</h3>
-                      <div style="font-size: 3rem; font-weight: bold; margin: 16px 0;">
-                        <span id="drowsinessScore" style="color: #f39c12;">—</span>
-                      </div>
-                      <div style="font-size: 0.9rem; color: #aaa; margin-top: 12px;">
-                        Delta / (Alpha + Beta)
-                      </div>
-                      <div id="drowsinessDesc" style="font-size: 0.8rem; color: #ccc; margin-top: 12px; padding: 8px; background: var(--bg-tertiary); border-radius: 3px;">—</div>
-                    </div>
-                  </div>
-
-                  <!-- Scrolling Graphs Section -->
-                  <div style="display: grid; grid-template-columns: 1fr; gap: 16px;">
-                    <!-- Attention Graph -->
-                    <div style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border: 2px solid #45b7d1;">
-                      <h3 style="color: #45b7d1; margin-top: 0; margin-bottom: 12px;">🎯 Attention Over Time</h3>
-                      <canvas id="attentionGraphCanvas" style="display: block; width: 100%; height: 150px; background: #000000; border-radius: 3px;"></canvas>
-                    </div>
-
-                    <!-- Meditation Graph -->
-                    <div style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border: 2px solid #4ecdc4;">
-                      <h3 style="color: #4ecdc4; margin-top: 0; margin-bottom: 12px;">🧘 Meditation Over Time</h3>
-                      <canvas id="meditationGraphCanvas" style="display: block; width: 100%; height: 150px; background: #000000; border-radius: 3px;"></canvas>
-                    </div>
-
-                    <!-- Drowsiness Graph -->
-                    <div style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; border: 2px solid #f39c12;">
-                      <h3 style="color: #f39c12; margin-top: 0; margin-bottom: 12px;">😴 Drowsiness Over Time</h3>
-                      <canvas id="drowsinessGraphCanvas" style="display: block; width: 100%; height: 150px; background: #000000; border-radius: 3px;"></canvas>
-                    </div>
-                  </div>
-
-                  <!-- Explanation -->
-                  <div style="margin-top: 20px; padding: 16px; background: var(--bg-tertiary); border-left: 4px solid #00ff88; border-radius: 4px;">
-                    <h3 style="color: #00ff88; margin-top: 0;">📊 How These Are Calculated</h3>
-                    <ul style="font-size: 0.9rem; color: #ccc; line-height: 1.6;">
-                      <li><strong>🎯 Attention (Focus)</strong> = Beta / (Alpha + Theta)
-                        <br/><span style="color: #aaa;">High values indicate alert, processing information. Low values mean relaxed or distracted.</span>
-                      </li>
-                      <li><strong>🧘 Meditation (Calm)</strong> = Alpha / (Beta + Gamma)
-                        <br/><span style="color: #aaa;">High values indicate relaxed, wakeful state with quiet mind. Low values mean active thinking or anxiety.</span>
-                      </li>
-                      <li><strong>😴 Drowsiness (Sleep Onset)</strong> = Delta / (Alpha + Beta)
-                        <br/><span style="color: #aaa;">High values indicate sleep onset with increased slow-wave activity. Watch for this spike when tired!</span>
-                      </li>
-                    </ul>
-                  </div>
+                <div class="chart-container">
+                   <h3>🌊 3D Waterfall — IBVA-style</h3>
+                   <div style="padding: 12px 16px; background: var(--bg-tertiary); border-left: 3px solid #22c55e; margin-bottom: 12px; border-radius: 4px;">
+                     <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                       <strong style="color: #22c55e;">📈 3D Waterfall Spectrogram:</strong> Time-frequency visualization where each horizontal line represents one EEG snapshot (frequency spectrum). Lines are stacked in time with newer data in front. Height/brightness shows band power intensity. Perfect for spotting temporal patterns like alpha waves growing during meditation or theta bursts during drowsiness. Inspired by IBVA professional neurofeedback systems.
+                     </p>
+                   </div>
+                  <canvas id="waterfallCanvas" width="1300" height="580" style="width:100%;height:440px;border-radius:8px;background:#0d1117;"></canvas>
                 </div>
-              </div>
+             </div>
 
-              <!-- Sensor Specifications Tab -->
-              <div id="sensors" class="tab-pane">
-                <div style="padding: 16px;">
-                  <h2 style="color: #00ff88; margin-bottom: 20px;">🧠 Muse S Athena (Gen 3) - Sensor Specifications</h2>
-                  
-                  <div style="display: grid; grid-template-columns: 1fr; gap: 16px;">
-                    <!-- EEG Section -->
-                    <div style="background: var(--bg-secondary); padding: 16px; border-radius: 4px; border-left: 4px solid #ff6b6b;">
-                      <h3 style="margin-top: 0; color: #ff6b6b;">🧠 EEG (Brain Electrical Activity)</h3>
-                      <table style="width: 100%; font-size: 0.9rem; border-collapse: collapse;">
-                        <tr><td style="padding: 6px;"><strong>Channels</strong></td><td>4 (TP9, AF7, AF8, TP10)</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Sample Rate</strong></td><td>256 Hz</td></tr>
-                        <tr><td style="padding: 6px;"><strong>Resolution</strong></td><td>14-bit (Higher precision vs 12-bit Muse 2/S)</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Data Range</strong></td><td>0 to 16,383 μV</td></tr>
-                        <tr><td style="padding: 6px;"><strong>Electrode Type</strong></td><td>Silver-thread fabric (vs silver-ink)</td></tr>
-                      </table>
-                    </div>
-
-                    <!-- fNIRS Section -->
-                    <div style="background: var(--bg-secondary); padding: 16px; border-radius: 4px; border-left: 4px solid #4ecdc4;">
-                      <h3 style="margin-top: 0; color: #4ecdc4;">🧠 fNIRS (Brain Effort / Oxygenation) - ATHENA EXCLUSIVE</h3>
-                      <table style="width: 100%; font-size: 0.9rem; border-collapse: collapse;">
-                        <tr><td style="padding: 6px;"><strong>Optodes</strong></td><td>5-optode system (Bilateral Frontal)</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Coverage</strong></td><td>Prefrontal Cortex (Brain Effort)</td></tr>
-                        <tr><td style="padding: 6px;"><strong>Sample Rate</strong></td><td>64 Hz</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Resolution</strong></td><td>20-bit (Triple wavelength)</td></tr>
-                        <tr><td style="padding: 6px;"><strong>Wavelengths</strong></td><td>760 nm, 850 nm, 940 nm</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Measures</strong></td><td>HbO₂, HbR, HbTotal (Hemodynamic)</td></tr>
-                      </table>
-                    </div>
-
-                    <!-- PPG Section -->
-                    <div style="background: var(--bg-secondary); padding: 16px; border-radius: 4px; border-left: 4px solid #f39c12;">
-                      <h3 style="margin-top: 0; color: #f39c12;">❤️ PPG (Heart Rate & HRV)</h3>
-                      <table style="width: 100%; font-size: 0.9rem; border-collapse: collapse;">
-                        <tr><td style="padding: 6px;"><strong>Wavelengths</strong></td><td>Red (680nm), Near-IR (850nm), IR (940nm)</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Sample Rate</strong></td><td>64 Hz</td></tr>
-                        <tr><td style="padding: 6px;"><strong>Resolution</strong></td><td>20-bit Triple wavelength (upgraded from 16-bit)</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Measures</strong></td><td>Heart Rate (BPM), Heart Rate Variability (HRV)</td></tr>
-                      </table>
-                    </div>
-
-                    <!-- Accelerometer Section -->
-                    <div style="background: var(--bg-secondary); padding: 16px; border-radius: 4px; border-left: 4px solid #45b7d1;">
-                      <h3 style="margin-top: 0; color: #45b7d1;">💨 Accelerometer (Motion & Breathing)</h3>
-                      <table style="width: 100%; font-size: 0.9rem; border-collapse: collapse;">
-                        <tr><td style="padding: 6px;"><strong>Axes</strong></td><td>3-axis (X, Y, Z)</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Sample Rate</strong></td><td>52 Hz</td></tr>
-                        <tr><td style="padding: 6px;"><strong>Resolution</strong></td><td>16-bit</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Data Range</strong></td><td>+/- 4 G (gravity)</td></tr>
-                        <tr><td style="padding: 6px;"><strong>Detects</strong></td><td>Motion, Breathing, Posture shifts</td></tr>
-                      </table>
-                    </div>
-
-                    <!-- Gyroscope Section -->
-                    <div style="background: var(--bg-secondary); padding: 16px; border-radius: 4px; border-left: 4px solid #f9ca24;">
-                      <h3 style="margin-top: 0; color: #f9ca24;">🔄 Gyroscope (Rotation & Posture)</h3>
-                      <table style="width: 100%; font-size: 0.9rem; border-collapse: collapse;">
-                        <tr><td style="padding: 6px;"><strong>Axes</strong></td><td>3-axis (X, Y, Z)</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Sample Rate</strong></td><td>52 Hz</td></tr>
-                        <tr><td style="padding: 6px;"><strong>Resolution</strong></td><td>16-bit</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Data Range</strong></td><td>+/- 250 dps (degrees/second)</td></tr>
-                        <tr><td style="padding: 6px;"><strong>Detects</strong></td><td>Head rotation, Posture, Angular velocity</td></tr>
-                      </table>
-                    </div>
-
-                    <!-- Connectivity Section -->
-                    <div style="background: var(--bg-secondary); padding: 16px; border-radius: 4px; border-left: 4px solid #00ff88;">
-                      <h3 style="margin-top: 0; color: #00ff88;">🔌 Connectivity & Hardware</h3>
-                      <table style="width: 100%; font-size: 0.9rem; border-collapse: collapse;">
-                        <tr><td style="padding: 6px;"><strong>Bluetooth</strong></td><td>BLE 5.3 (Lower latency vs 4.2)</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Charging</strong></td><td>USB-C (upgrade from Micro-USB)</td></tr>
-                        <tr><td style="padding: 6px;"><strong>Design</strong></td><td>Soft fabric strap with silver-thread electrodes</td></tr>
-                        <tr style="background: var(--bg-tertiary);"><td style="padding: 6px;"><strong>Eyes-Open</strong></td><td>✓ Supports eyes-open training (Strength mode)</td></tr>
-                      </table>
-                    </div>
+             <!-- Phase Tab -->
+              <div id="phase" class="tab-pane">
+                <!-- Band Selector Bar -->
+                <div class="selector-bar">
+                  <span class="selector-label">Band:</span>
+                  <div class="selector-group">
+                    <button class="selector-btn band-delta" data-band="delta">δ Delta</button>
+                    <button class="selector-btn band-theta" data-band="theta">θ Theta</button>
+                    <button class="selector-btn band-alpha active" data-band="alpha">α Alpha</button>
+                    <button class="selector-btn band-beta" data-band="beta">β Beta</button>
+                    <button class="selector-btn band-gamma" data-band="gamma">γ Gamma</button>
                   </div>
+                  <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
+                </div>
+                <div class="chart-container">
+                  <h3>🎯 Phase — Polar Plot</h3>
+                 <p class="sensor-info">Polar plot showing phase angle and magnitude of oscillations per electrode. Distance from center = power. Angle = instantaneous phase. Trails show recent trajectory. When electrodes cluster together, the brain regions are synchronizing.</p>
+                 <canvas id="phaseCanvas" width="500" height="500" style="width:100%;max-width:460px;height:400px;border-radius:8px;background:#0d1117;display:block;margin:0 auto;"></canvas>
                </div>
+             </div>
+
+             <!-- PPG / Heart Rate Tab -->
+             <div id="ppgHR" class="tab-pane">
+               <div class="chart-container">
+                 <h3>❤️ PPG / Heart Rate</h3>
+                 <p class="sensor-info">Photoplethysmography measures blood volume pulse via infrared light. The BPM readout is smoothed. The waveform shows the cardiac cycle. Heart rate variability (HRV) can be observed in the spacing between peaks.</p>
+                 <canvas id="ppgHRCanvas" width="1100" height="400" style="width:100%;height:340px;border-radius:8px;background:#0d1117;"></canvas>
                </div>
+             </div>
 
-              <!-- OSC Console Tab -->
-              <div id="oscconsole" class="tab-pane">
-                <div style="padding: 16px; display: flex; flex-direction: column; height: 100%; gap: 16px;">
-                  <h2 style="color: #00ff88; margin: 0;">📊 OSC Console - Real-time Monitoring</h2>
-                  
-                  <!-- Controls Row -->
-                  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; background: var(--bg-secondary); padding: 12px; border-radius: 4px;">
-                    <div>
-                      <label style="color: #aaa; display: block; margin-bottom: 6px; font-size: 0.85rem;">🔴 RECORDING STATUS</label>
-                      <div id="recordingStatus" style="background: var(--bg-tertiary); padding: 8px; border-radius: 3px; color: #f39c12; font-weight: bold;">
-                        ◉ NOT RECORDING
-                      </div>
-                    </div>
-                    <div>
-                      <label style="color: #aaa; display: block; margin-bottom: 6px; font-size: 0.85rem;">📋 RECORDING COLUMNS</label>
-                      <div id="recordingColumns" style="background: var(--bg-tertiary); padding: 8px; border-radius: 3px; color: #00ff88; font-size: 0.85rem; max-height: 50px; overflow-y: auto;">
-                        timestamp, eeg_raw
-                      </div>
-                    </div>
-                    <div>
-                      <label style="color: #aaa; display: block; margin-bottom: 6px; font-size: 0.85rem;">⚙️ CONSOLE CONTROLS</label>
-                      <div style="display: flex; gap: 6px;">
-                        <button id="oscClearBtn" class="btn btn-small" style="flex: 1;">Clear</button>
-                        <button id="oscPauseBtn" class="btn btn-small" style="flex: 1;">Pause</button>
-                      </div>
-                    </div>
+             <!-- Motion Tab -->
+               <div id="motion" class="tab-pane">
+                 <div style="display: flex; flex-direction: column; gap: 16px; padding: 16px; height: 100%;">
+                   <!-- Description -->
+                   <div style="padding: 12px 16px; background: var(--bg-tertiary); border-left: 3px solid #ef4444; margin-bottom: 4px; border-radius: 4px;">
+                     <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                       <strong style="color: #ef4444;">📍 Motion Sensors:</strong> Real-time 3-axis accelerometer (linear motion in g-units) and gyroscope (rotational velocity in °/sec). Use to detect head movement artifacts in EEG, monitor posture stability, or track physical activity correlated with brain state.
+                     </p>
+                   </div>
+                   
+                   <div class="chart-container" style="flex: 1;">
+                     <h3>💨 Accelerometer (10 Hz)</h3>
+                     <p class="sensor-info">X (forward/back), Y (left/right), Z (up/down) in g-units</p>
+                     <canvas id="accelChart" width="1000" height="300" style="width:100%;height:100%;border-radius:8px;background:#0d1117;"></canvas>
+                   </div>
+                   <div class="chart-container" style="flex: 1;">
+                     <h3>🔄 Gyroscope (10 Hz)</h3>
+                     <p class="sensor-info">Roll, Pitch, Yaw rotation rates in degrees/second</p>
+                     <canvas id="gyroChart" width="1000" height="300" style="width:100%;height:100%;border-radius:8px;background:#0d1117;"></canvas>
+                   </div>
                   </div>
+                 </div>
+                </div>
 
-                  <!-- Stream Filter Checkboxes -->
-                  <div style="background: var(--bg-secondary); padding: 12px; border-radius: 4px;">
-                    <label style="color: #00ff88; font-weight: bold; margin-bottom: 8px; display: block;">Show Streams:</label>
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-size: 0.85rem;">
-                      <label style="display: flex; align-items: center; gap: 6px; color: #aaa;"><input type="checkbox" class="osc-filter" data-stream="eeg" checked /> 🧠 EEG</label>
-                      <label style="display: flex; align-items: center; gap: 6px; color: #aaa;"><input type="checkbox" class="osc-filter" data-stream="bands" checked /> 📊 Bands</label>
-                      <label style="display: flex; align-items: center; gap: 6px; color: #aaa;"><input type="checkbox" class="osc-filter" data-stream="attention" checked /> 🎯 Attention</label>
-                      <label style="display: flex; align-items: center; gap: 6px; color: #aaa;"><input type="checkbox" class="osc-filter" data-stream="meditation" checked /> 🧘 Meditation</label>
-                      <label style="display: flex; align-items: center; gap: 6px; color: #aaa;"><input type="checkbox" class="osc-filter" data-stream="drowsiness" checked /> 😴 Drowsiness</label>
-                      <label style="display: flex; align-items: center; gap: 6px; color: #aaa;"><input type="checkbox" class="osc-filter" data-stream="accel" /> 💨 Accel</label>
-                      <label style="display: flex; align-items: center; gap: 6px; color: #aaa;"><input type="checkbox" class="osc-filter" data-stream="gyro" /> 🔄 Gyro</label>
-                      <label style="display: flex; align-items: center; gap: 6px; color: #aaa;"><input type="checkbox" class="osc-filter" data-stream="ppg" /> ❤️ PPG</label>
-                      <label style="display: flex; align-items: center; gap: 6px; color: #aaa;"><input type="checkbox" class="osc-filter" data-stream="fnirs" /> 🧬 fNIRS</label>
-                      <label style="display: flex; align-items: center; gap: 6px; color: #aaa;"><input type="checkbox" class="osc-filter" data-stream="alerts" checked /> 🚪 Alerts</label>
-                    </div>
-                  </div>
+             <!-- DSP Processing Tab -->
+             <div id="dsp" class="tab-pane">
+               <div style="padding: 16px;">
+                 <h2 style="margin-top: 0; color: var(--text-primary);">⚙️ Signal Processing Pipeline</h2>
+                 <p style="color: var(--text-secondary); margin-bottom: 20px;">Select and configure real-time signal processors. Each category applies its own transformation. Parameters update live on all connected streams.</p>
 
-                  <!-- Console Output -->
-                  <div style="flex: 1; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid #333; overflow: hidden; display: flex; flex-direction: column;">
-                    <div id="oscConsole" style="flex: 1; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.8rem; padding: 12px; color: #0f0; line-height: 1.4;">
-                      <div style="color: #666;">🟢 OSC Console ready - waiting for data...</div>
-                    </div>
-                  </div>
+                 <!-- DSP Categories Grid -->
+                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
 
-                  <!-- Stats Footer -->
-                  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; background: var(--bg-secondary); padding: 12px; border-radius: 4px; font-size: 0.85rem;">
-                    <div style="text-align: center;">
-                      <div style="color: #666;">OSC Packets Sent</div>
-                      <div id="oscPacketCount" style="color: #00ff88; font-weight: bold; font-size: 1.2rem;">0</div>
-                    </div>
-                    <div style="text-align: center;">
-                      <div style="color: #666;">Recording Samples</div>
-                      <div id="recordingSampleCount" style="color: #f39c12; font-weight: bold; font-size: 1.2rem;">0</div>
-                    </div>
-                    <div style="text-align: center;">
-                      <div style="color: #666;">Last Message</div>
-                      <div id="lastMessageTime" style="color: #4ecdc4; font-weight: bold; font-size: 0.9rem;">—</div>
-                    </div>
-                    <div style="text-align: center;">
-                      <div style="color: #666;">Buffer Size</div>
-                      <div id="bufferSize" style="color: #ff6b6b; font-weight: bold; font-size: 1.2rem;">0 KB</div>
-                    </div>
-                  </div>
+                   <!-- FILTER Category -->
+                   <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                     <h3 style="margin: 0 0 12px 0; color: #6366f1; font-size: 1rem;">🔊 Filter</h3>
+                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+                       <button class="dsp-btn" data-proc="none" title="Bypass filter">Bypass</button>
+                       <button class="dsp-btn" data-proc="lp" title="Smooths high-frequency noise">Low Pass</button>
+                       <button class="dsp-btn" data-proc="hp" title="Removes DC drift">High Pass</button>
+                       <button class="dsp-btn" data-proc="notch" title="Removes 50/60Hz mains">Notch</button>
+                       <button class="dsp-btn" data-proc="bp" title="Isolates freq band">Band Pass</button>
+                       <button class="dsp-btn" data-proc="dc" title="Block DC offset">DC Block</button>
+                       <button class="dsp-btn" data-proc="deltafilt" title="Suppresses Delta (0.5-4Hz)">Delta Suppress</button>
+                     </div>
+                     <div id="filterParams" style="padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.85rem;"></div>
+                   </div>
+
+                   <!-- SMOOTH Category -->
+                   <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                     <h3 style="margin: 0 0 12px 0; color: #f59e0b; font-size: 1rem;">📈 Smooth</h3>
+                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+                       <button class="dsp-btn" data-proc="ema" title="Exponential Moving Avg">EMA</button>
+                       <button class="dsp-btn" data-proc="savgol" title="Savitzky-Golay polynomial">Savitzky-Golay</button>
+                       <button class="dsp-btn" data-proc="median" title="Median filter">Median</button>
+                       <button class="dsp-btn" data-proc="kalman" title="Kalman filter">Kalman</button>
+                       <button class="dsp-btn" data-proc="rms" title="RMS envelope">RMS Env</button>
+                       <button class="dsp-btn" data-proc="gauss" title="Gaussian blur">Gaussian</button>
+                     </div>
+                     <div id="smoothParams" style="padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.85rem;"></div>
+                   </div>
+
+                   <!-- GATE Category -->
+                   <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                     <h3 style="margin: 0 0 12px 0; color: #22c55e; font-size: 1rem;">🚪 Gate & Threshold</h3>
+                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+                       <button class="dsp-btn" data-proc="gate" title="Noise gate">Noise Gate</button>
+                       <button class="dsp-btn" data-proc="thresh" title="Hard threshold">Threshold</button>
+                       <button class="dsp-btn" data-proc="hyst" title="Hysteresis comparator">Hysteresis</button>
+                       <button class="dsp-btn" data-proc="peak" title="Peak detector">Peak Detect</button>
+                       <button class="dsp-btn" data-proc="zerox" title="Zero-crossing detector">Zero-Cross</button>
+                       <button class="dsp-btn" data-proc="artifact" title="Artifact rejection">Artifact Rej</button>
+                     </div>
+                     <div id="gateParams" style="padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.85rem;"></div>
+                   </div>
+
+                   <!-- SHAPE Category -->
+                   <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                     <h3 style="margin: 0 0 12px 0; color: #3b82f6; font-size: 1rem;">📐 Shape</h3>
+                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+                       <button class="dsp-btn" data-proc="envf" title="Envelope follower">Env Follow</button>
+                       <button class="dsp-btn" data-proc="slew" title="Slew rate limit">Slew Limit</button>
+                       <button class="dsp-btn" data-proc="clip" title="Soft clipping">Soft Clip</button>
+                       <button class="dsp-btn" data-proc="rect" title="Full wave rectifier">Rectifier</button>
+                     </div>
+                     <div id="shapeParams" style="padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.85rem;"></div>
+                   </div>
+
+                 </div>
+
+                 <!-- Active Processor Info Panel -->
+                 <div style="margin-top: 20px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                   <h3 style="margin: 0 0 8px 0; color: var(--text-secondary);">Active Processor</h3>
+                   <div style="font-size: 1.1rem; font-weight: 600; color: #6366f1; margin-bottom: 8px;" id="activeProcName">
+                     None (Bypass)
+                   </div>
+                   <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;" id="activeProcDesc">
+                     No processing applied. Signal passes through unchanged.
+                   </p>
+                 </div>
+
                 </div>
               </div>
 
-              <!-- Statistics Tab -->
-              <div id="stats" class="tab-pane">
+             <!-- OSC Monitor Tab -->
+             <div id="osc" class="tab-pane">
+               <div style="padding: 16px;">
+                 <h2 style="margin-top: 0; color: var(--text-primary);">📡 OSC Stream Monitor</h2>
+                 <p style="color: var(--text-secondary); margin-bottom: 16px;">Real-time view of OSC messages being sent. Choose device, mode, and what to stream.</p>
+
+                  <!-- Device Selection -->
+                  <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                    <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">Device</label>
+                    <select id="oscDeviceSelect" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); font-family: monospace; font-weight: 600;">
+                      <option value="muse2">Muse 2 (4 ch: TP9, AF7, AF8, TP10)</option>
+                      <option value="athena">Muse S/Athena (4 ch + PPG/fNIRS)</option>
+                      <option value="ganglion">OpenBCI Ganglion (4 ch: Ch1-4)</option>
+                      <option value="ultracortex">OpenBCI Ultracortex (16 ch: 10-20)</option>
+                    </select>
+                  </div>
+
+                  <!-- OSC Streams to Enable -->
+                  <div style="margin-bottom: 20px; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                    <h3 style="color: var(--text-primary); margin: 0 0 12px 0;">📤 OSC Streams</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="oscStreamRawEEG" checked style="width: 16px; height: 16px; cursor: pointer; accent-color: #6366f1;">
+                        <span style="font-size: 0.85rem; color: var(--text-primary);">Raw EEG (256Hz)</span>
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="oscStreamBandAbsolute" style="width: 16px; height: 16px; cursor: pointer; accent-color: #f59e0b;">
+                        <span style="font-size: 0.85rem; color: var(--text-primary);">Band Absolute (10Hz)</span>
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="oscStreamBandRelative" style="width: 16px; height: 16px; cursor: pointer; accent-color: #22c55e;">
+                        <span style="font-size: 0.85rem; color: var(--text-primary);">Band Relative (10Hz)</span>
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="oscStreamMotionAccel" style="width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6;">
+                        <span style="font-size: 0.85rem; color: var(--text-primary);">Accelerometer (10Hz)</span>
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="oscStreamMotionGyro" style="width: 16px; height: 16px; cursor: pointer; accent-color: #a855f7;">
+                        <span style="font-size: 0.85rem; color: var(--text-primary);">Gyroscope (10Hz)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                 <!-- Mode Selection -->
+                 <div style="margin-bottom: 20px; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                   <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
+                     <div style="flex: 1;">
+                       <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">OSC Protocol Mode</div>
+                       <div style="font-size: 0.85rem; color: var(--text-secondary);">Select message format for your target DAW/software</div>
+                     </div>
+                     <div style="display: flex; gap: 8px;">
+                       <button id="oscModeA" class="osc-mode-btn active" style="padding: 8px 16px; border-radius: 6px; border: 2px solid #6366f1; background: #6366f120; color: #6366f1; font-weight: 600; cursor: pointer;">
+                         Mode A: Arrays
+                       </button>
+                       <button id="oscModeB" class="osc-mode-btn" style="padding: 8px 16px; border-radius: 6px; border: 2px solid var(--border); background: transparent; color: var(--text-primary); font-weight: 600; cursor: pointer;">
+                         Mode B: Scalar
+                       </button>
+                     </div>
+                   </div>
+
+                   <!-- Mode Info -->
+                   <div id="modeInfoA" style="padding: 8px; background: var(--bg-tertiary); border-radius: 6px; border-left: 3px solid #6366f1;">
+                     <strong style="color: #6366f1;">Mode A — Csound/Bands</strong>
+                     <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">
+                       Multiple float values per message. One message per band with all channels.
+                     </div>
+                   </div>
+                   <div id="modeInfoB" style="display: none; padding: 8px; background: var(--bg-tertiary); border-radius: 6px; border-left: 3px solid #eab308;">
+                     <strong style="color: #eab308;">Mode B — Max/MSP/TouchDesigner</strong>
+                     <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">
+                       Individual scalar messages. One message per electrode per band.
+                     </div>
+                   </div>
+                 </div>
+
+                 <!-- OSC Stream Controls -->
+                 <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+                   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+                     <!-- Port -->
+                     <div>
+                       <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Port</label>
+                       <input id="oscPort" type="number" value="7400" style="width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); font-family: monospace; font-weight: 600;">
+                     </div>
+                     
+                     <!-- Send Rate -->
+                     <div>
+                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                         <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Send Rate</label>
+                         <span id="oscRateVal" style="font-size: 0.8rem; font-weight: 600; color: #6366f1; font-family: monospace;">20</span>
+                       </div>
+                       <input id="oscRate" type="range" min="1" max="100" value="20" style="width: 100%; accent-color: #6366f1; cursor: pointer;">
+                     </div>
+                     
+                     <!-- Smoothing -->
+                     <div>
+                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                         <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Smoothing</label>
+                         <span id="oscSmoothVal" style="font-size: 0.8rem; font-weight: 600; color: #f59e0b; font-family: monospace;">0.10</span>
+                       </div>
+                       <input id="oscSmooth" type="range" min="0" max="1" step="0.01" value="0.1" style="width: 100%; accent-color: #f59e0b; cursor: pointer;">
+                     </div>
+
+                     <!-- Scale -->
+                     <div>
+                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                         <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Scale</label>
+                         <span id="oscScaleVal" style="font-size: 0.8rem; font-weight: 600; color: #22c55e; font-family: monospace;">1.00</span>
+                       </div>
+                       <input id="oscScale" type="range" min="0.1" max="5" step="0.1" value="1" style="width: 100%; accent-color: #22c55e; cursor: pointer;">
+                     </div>
+
+                     <!-- Filtered/Raw Toggle -->
+                     <div>
+                       <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">Data Source</label>
+                       <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 8px; background: var(--bg-tertiary); border-radius: 4px; border: 1px solid var(--border);">
+                         <input id="oscFiltered" type="checkbox" checked style="width: 16px; height: 16px; cursor: pointer; accent-color: #22c55e;">
+                         <span id="oscFilteredLabel" style="font-size: 0.8rem; font-weight: 600; color: #22c55e; flex: 1; font-family: monospace;">Filtered</span>
+                       </label>
+                     </div>
+
+                     <!-- Status -->
+                     <div>
+                       <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Status</label>
+                       <div style="padding: 6px 8px; background: var(--bg-tertiary); border-radius: 4px; font-family: monospace; color: #22c55e; font-weight: 600; font-size: 0.85rem;">
+                         <span style="display: inline-block; width: 5px; height: 5px; background: #22c55e; border-radius: 50%; margin-right: 4px; animation: pulse 1s infinite;"></span>
+                         LIVE
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+
+                 <!-- Band Selection -->
+                 <div style="margin-bottom: 20px;">
+                   <h3 style="color: var(--text-primary); margin: 0 0 12px 0;">Select Bands</h3>
+                   <div style="display: flex; flex-wrap: wrap; gap: 6px;" id="oscBandSelect">
+                     <!-- Generated by JavaScript -->
+                   </div>
+                 </div>
+
+                 <!-- Channel Selection -->
+                 <div style="margin-bottom: 20px;">
+                   <h3 style="color: var(--text-primary); margin: 0 0 12px 0;">Select Channels</h3>
+                   <div style="display: flex; flex-wrap: wrap; gap: 6px;" id="oscChannelSelect">
+                     <!-- Generated by JavaScript -->
+                   </div>
+                 </div>
+
+                 <!-- Extra Features -->
+                 <div style="margin-bottom: 20px;">
+                   <h3 style="color: var(--text-primary); margin: 0 0 12px 0;">Include Extras</h3>
+                   <div style="display: flex; flex-wrap: wrap; gap: 6px;" id="oscExtrasSelect">
+                     <!-- Generated by JavaScript -->
+                   </div>
+                 </div>
+
+                 <!-- Example Code -->
+                 <div style="margin-bottom: 20px;">
+                   <h3 style="color: var(--text-primary); margin: 0 0 12px 0;">Example Code</h3>
+                   <div id="exampleCodeContainer" style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-x: auto;">
+                     <pre id="exampleCode" style="margin: 0; font-size: 0.8rem; color: var(--text-secondary); font-family: 'Courier New', monospace; line-height: 1.5;"></pre>
+                   </div>
+                 </div>
+
+                 <!-- Live Message Monitor -->
+                 <div style="margin-bottom: 12px;">
+                   <h3 style="color: var(--text-primary); margin: 0 0 8px 0;">Live Messages</h3>
+                   <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;" id="oscMessageStats">
+                     <span style="display: inline-block; width: 6px; height: 6px; background: #22c55e; border-radius: 50%; margin-right: 4px;"></span>
+                     <span id="oscMessageCount">0</span> messages @ <span id="oscRateDisplay">20</span> Hz → localhost:<span id="oscPortDisplay">7400</span>
+                   </div>
+                   <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 8px; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.75rem; line-height: 1.4;" id="oscMessageList">
+                     <div style="color: var(--text-secondary); padding: 8px; text-align: center;">Loading messages...</div>
+                   </div>
+                 </div>
+
+               </div>
+             </div>
+
+               <!-- Statistics Tab -->
+               <div id="stats" class="tab-pane">
               <div class="stats-table">
                 <table>
                   <thead>
@@ -1167,22 +1143,7 @@
               </div>
             </div>
 
-          <!-- OSC CONSOLE - WIDE DISPLAY BELOW CHARTS -->
-          <div class="osc-console-container">
-            <div class="osc-console-header">
-              <h3>📡 OSC Console - Real-time Data Stream</h3>
-              <div class="osc-console-controls">
-                <label class="toggle">
-                  <input type="checkbox" id="oscConsoleToggle" checked />
-                  <span>Enable</span>
-                </label>
-                <button id="oscClearBtn" class="btn btn-small">Clear</button>
-              </div>
-            </div>
-            <div id="oscConsole" class="osc-console">
-              <div class="osc-messages"></div>
-            </div>
-          </div>
+
         </main>
       </div>
 
