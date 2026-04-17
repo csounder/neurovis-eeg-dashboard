@@ -1736,7 +1736,7 @@ function handleDeviceList(devices) {
         <p style="color: #666; margin: 8px 0; font-size: 0.75rem;">Scroll down to the <strong>🎲 Simulator</strong> section and click <strong>Enable Test Mode</strong> to test the dashboard with synthetic EEG data.</p>
         <div style="margin-top: 12px; padding: 8px; background: #1a3a3a; border-radius: 4px; border-left: 3px solid #4dd0e1;">
           <p style="margin: 0; font-size: 0.7rem; color: #4dd0e1;">
-            <strong>💡 For real Muse device:</strong> Pair device in Bluetooth settings, then ensure MuseBridge is running.
+            <strong>💡 For real Muse devices:</strong> Enable Bluetooth pairing in System Preferences, ensure MuseBridge is running, then they'll appear here.
           </p>
         </div>
       </div>
@@ -1751,24 +1751,36 @@ function handleDeviceList(devices) {
         ? "4px solid #00ff88; box-shadow: 0 0 10px #00ff88;"
         : "4px solid #333;";
 
-      // Infer device type from name
-      let deviceType = "muse-2";
-      if (device.name.includes("Muse S") || device.name.includes("Athena"))
-        deviceType = "muse-s";
-      if (device.name.includes("Ganglion")) deviceType = "ganglion";
-      if (device.name.includes("Ultracortex")) deviceType = "ultracortex";
+      // Use device specs from backend (includes model detection)
+      const specs = device.specs || {};
+      const channelNames = specs.channelNames || ["?"];
+      const extras = [];
 
-      const info = DEVICE_INFO[deviceType];
+      // Build extras list from device capabilities
+      if (specs.hasMotion) extras.push("Motion");
+      if (specs.hasPPG) extras.push("PPG/HR");
+      if (specs.hasfNIRS) extras.push("fNIRS");
+      if (extras.length === 0) extras.push("—");
+
+      // Device icon based on model
+      let icon = "🧠";
+      if (device.modelKey?.includes("ATHENA")) icon = "👑";
+      else if (device.modelKey?.includes("MUSE")) icon = "🧠";
+
+      const displayName = device.displayName || device.name;
+      const modelInfo = device.modelCode || "Unknown Model";
+      const sampleRate = specs.eegSampleRate || 256;
+      const specsText = `${sampleRate} Hz sampling${specs.hasPPG ? ", PPG" : ""}${specs.hasfNIRS ? ", fNIRS" : ""}`;
 
       return `
     <div class="device-card" onclick="connectDevice(${idx})" style="border: ${borderStyle}; cursor: pointer; transition: all 0.2s; padding: 12px; background: var(--bg-secondary); border-radius: 6px; position: relative;">
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-        <span style="font-size: 1.2rem;">${info.icon}</span>
+        <span style="font-size: 1.2rem;">${icon}</span>
         <div style="flex: 1;">
           <div class="device-name" style="font-weight: 700; margin: 0; color: #00ff88;">
             ${isSelected ? "✅ CONNECTED: " : "🔗 "} ${device.name}
           </div>
-          <div style="font-size: 0.7rem; color: #888; margin: 2px 0;">${info.name}</div>
+          <div style="font-size: 0.7rem; color: #00ff88; margin: 2px 0; font-weight: 600;">${modelInfo}</div>
           <div style="font-size: 0.65rem; color: #f59e0b; margin-top: 4px; font-weight: 600;">
             ${isSelected ? "✓ Active" : "Click to Connect"}
           </div>
@@ -1776,17 +1788,21 @@ function handleDeviceList(devices) {
       </div>
       <div style="padding-top: 8px; border-top: 1px solid #333; font-size: 0.75rem; color: #999;">
         <div style="margin-bottom: 4px;">
-          <strong style="color: #00ff88;">Channels:</strong> ${info.channels} × ${info.channelNames.join(", ")}
+          <strong style="color: #00ff88;">EEG Channels:</strong> ${specs.eegChannels || "?"} × ${channelNames.join(", ")}
         </div>
         <div style="margin-bottom: 4px;">
-          <strong style="color: #00ff88;">Extras:</strong> ${info.extras.join(", ")}
+          <strong style="color: #00ff88;">Sensors:</strong> ${extras.join(", ")}
         </div>
         <div style="margin-bottom: 4px;">
-          <strong style="color: #00ff88;">Specs:</strong> ${info.specs}
+          <strong style="color: #00ff88;">Specs:</strong> ${specsText}
         </div>
-        <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #555; color: #aaa;">
-          🔋 Battery: ${device.battery || "?"}%
-        </div>
+        ${
+          device.battery
+            ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #555; color: #aaa;">
+          🔋 Battery: ${device.battery}%
+        </div>`
+            : ""
+        }
       </div>
     </div>
   `;
@@ -1808,14 +1824,17 @@ function updateHeaderDeviceSelector() {
   devices.forEach((device, idx) => {
     const option = document.createElement("option");
     option.value = idx;
-    const deviceType =
-      device.name.includes("Athena") || device.name.includes("Muse S")
-        ? "Muse S"
-        : device.name.includes("Ganglion")
-          ? "Ganglion"
-          : device.name.includes("Ultracortex")
-            ? "Ultracortex"
-            : "Muse 2";
+
+    // Use device model info from backend (more accurate than name-based inference)
+    let deviceType = device.modelCode || "Unknown";
+
+    // Shorten long names
+    if (deviceType.includes("Athena")) deviceType = "Muse S Athena";
+    else if (deviceType.includes("Muse S")) deviceType = "Muse S";
+    else if (deviceType.includes("Muse 2")) deviceType = "Muse 2";
+    else if (deviceType.includes("Ganglion")) deviceType = "Ganglion";
+    else if (deviceType.includes("Ultracortex")) deviceType = "Ultracortex";
+
     option.textContent = `${device.name} (${deviceType})`;
 
     // Mark as selected if this device is connected
