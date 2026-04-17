@@ -1982,6 +1982,14 @@ function connectDevice(index) {
 // ============================================================================
 
 function setupEventListeners() {
+  // Skip sidebar setup if using React UI (no sidebar elements)
+  if (!document.getElementById("tabContainer")) {
+    console.log(
+      "[NeuroVis] React UI detected — skipping sidebar event listeners",
+    );
+    return;
+  }
+
   // Tabs
   document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
