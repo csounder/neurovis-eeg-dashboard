@@ -17,26 +17,40 @@
       <header class="header">
         <div class="header-content">
           <h1>🧠 Muse EEG Neuro Dashboard PRO</h1>
-          <div class="header-right">
-            <div class="status-indicators">
-              <div class="status" id="oscStatus">
-                <span class="dot"></span>
-                <span>OSC</span>
-              </div>
-              <div class="status" id="wsStatus">
-                <span class="dot"></span>
-                <span>WebSocket</span>
-              </div>
-              <div class="status" id="deviceStatus">
-                <span class="dot"></span>
-                <span>Device</span>
-              </div>
-              <div class="status" id="simulatorStatus">
-                <span class="dot"></span>
-                <span id="simLabel">Live</span>
-              </div>
-            </div>
-          </div>
+           <div class="header-right">
+             <div style="display: flex; align-items: center; gap: 16px;">
+               <!-- Color Palette Selector -->
+               <div style="display: flex; align-items: center; gap: 8px;">
+                 <label style="font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;">🎨 Theme:</label>
+                 <select id="colorPaletteSelector" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; font-family: monospace;">
+                   <option value="default">Default (NeuroVis)</option>
+                   <option value="dark">Dark (High Contrast)</option>
+                   <option value="warm">Warm (Sunset)</option>
+                   <option value="cool">Cool (Ocean)</option>
+                   <option value="solarized">Solarized</option>
+                 </select>
+               </div>
+               
+               <div class="status-indicators">
+                 <div class="status" id="oscStatus">
+                   <span class="dot"></span>
+                   <span>OSC</span>
+                 </div>
+                 <div class="status" id="wsStatus">
+                   <span class="dot"></span>
+                   <span>WebSocket</span>
+                 </div>
+                 <div class="status" id="deviceStatus">
+                   <span class="dot"></span>
+                   <span>Device</span>
+                 </div>
+                 <div class="status" id="simulatorStatus">
+                   <span class="dot"></span>
+                   <span id="simLabel">Live</span>
+                 </div>
+               </div>
+             </div>
+           </div>
         </div>
       </header>
 
@@ -391,21 +405,29 @@
               </div>
             </div>
 
-            <!-- Bands Tab -->
-             <div id="bands" class="tab-pane">
-               <!-- Band Selector Bar -->
-               <div class="selector-bar">
-                 <span class="selector-label">Bands:</span>
-                 <div class="selector-group">
-                   <button class="selector-btn band-delta active" data-band="delta">δ Delta</button>
-                   <button class="selector-btn band-theta" data-band="theta">θ Theta</button>
-                   <button class="selector-btn band-alpha" data-band="alpha">α Alpha</button>
-                   <button class="selector-btn band-beta" data-band="beta">β Beta</button>
-                   <button class="selector-btn band-gamma" data-band="gamma">γ Gamma</button>
-                 </div>
-                 <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
-               </div>
-               <div class="bands-grid">
+             <!-- Bands Tab -->
+              <div id="bands" class="tab-pane">
+                <!-- Band Selector Bar -->
+                <div class="selector-bar">
+                  <span class="selector-label">Bands:</span>
+                  <div class="selector-group">
+                    <button class="selector-btn band-delta active" data-band="delta">δ Delta</button>
+                    <button class="selector-btn band-theta" data-band="theta">θ Theta</button>
+                    <button class="selector-btn band-alpha" data-band="alpha">α Alpha</button>
+                    <button class="selector-btn band-beta" data-band="beta">β Beta</button>
+                    <button class="selector-btn band-gamma" data-band="gamma">γ Gamma</button>
+                  </div>
+                  <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
+                </div>
+                
+                <!-- Description Box -->
+                <div style="padding: 12px 16px; background: var(--bg-tertiary); border-left: 3px solid #f59e0b; margin: 12px 16px 0 16px; border-radius: 4px;">
+                  <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                    <strong style="color: #f59e0b;">🎨 Band Power:</strong> Real-time oscillatory power in five frequency bands. <strong style="color: #22c55e;">Green</strong> = high power (dominant brainwave), <strong style="color: #ef4444;">Red</strong> = low power. Delta (1-4Hz) = deep sleep, Theta (4-8Hz) = drowsy, Alpha (8-12Hz) = relaxed/meditative, Beta (12-30Hz) = focused thinking, Gamma (30-60Hz) = peak mental performance.
+                  </p>
+                </div>
+
+                <div class="bands-grid">
                 <div class="band-display">
                   <h3>Band Powers (Ch1)</h3>
                   <div class="band-bars">
@@ -474,18 +496,52 @@
                      </div>
                    </div>
                    
-                   <!-- Calibration Buttons -->
-                   <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-                     <button id="calibrationStartBtn" class="btn btn-small" style="background: #fbbf2420; color: #fbbf24; border: 1px solid #fbbf24;">
-                       ▶ Start Calibration
-                     </button>
-                     <button id="calibrationStopBtn" class="btn btn-small" style="background: #ef444420; color: #ef4444; border: 1px solid #ef4444; display: none;">
-                       ■ Stop
-                     </button>
-                     <button id="calibrationResetBtn" class="btn btn-small" style="background: transparent; color: #888; border: 1px solid #444; display: none;">
-                       ↻ Reset
-                     </button>
-                   </div>
+                    <!-- Calibration Instructions (from neurofeedback literature) -->
+                    <div id="calibrationInstructions" style="padding: 12px; background: #1a3a3a; border: 1px solid #2a5a5a; border-radius: 6px; margin-bottom: 12px;">
+                      <div style="font-size: 0.9rem; font-weight: 600; color: #4dd0e1; margin-bottom: 10px;">📋 Calibration Instructions (90 seconds)</div>
+                      
+                      <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6;">
+                        <div style="margin-bottom: 8px;">
+                          <strong style="color: #4dd0e1;">✓ DO:</strong>
+                          <ul style="margin: 4px 0 0 20px; padding: 0;">
+                            <li>Sit upright in a comfortable position (feet flat on ground)</li>
+                            <li><strong>Close your eyes</strong> — this stabilizes your baseline EEG</li>
+                            <li><strong>Breathe slowly &amp; deeply</strong> — 4 sec inhale, 6 sec exhale helps relax neural activity</li>
+                            <li>Relax your jaw, shoulders, and facial muscles</li>
+                            <li>Keep your body still — movement creates electrical artifacts</li>
+                            <li>Let your mind settle into a calm, neutral state (or your baseline state)</li>
+                          </ul>
+                        </div>
+                        
+                        <div style="margin-bottom: 8px;">
+                          <strong style="color: #ef5350;">✗ AVOID:</strong>
+                          <ul style="margin: 4px 0 0 20px; padding: 0;">
+                            <li>Clenching teeth or jaw tension</li>
+                            <li>Fidgeting, tapping, or sudden movements</li>
+                            <li>Intense thinking, mental math, or problem-solving</li>
+                            <li>Opening eyes or looking around</li>
+                            <li>Talking or using other devices</li>
+                          </ul>
+                        </div>
+                        
+                        <div style="padding: 8px; background: #0a2020; border-radius: 4px; border-left: 3px solid #4dd0e1;">
+                          <strong style="color: #4dd0e1;">💡 Why?</strong> Neurofeedback research shows that a <strong>relaxed, eyes-closed baseline</strong> with minimal movement produces the cleanest EEG calibration, enabling more accurate personalized metrics.
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <!-- Calibration Buttons -->
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                      <button id="calibrationStartBtn" class="btn btn-small" style="background: #fbbf2420; color: #fbbf24; border: 1px solid #fbbf24;">
+                        ▶ Start Calibration
+                      </button>
+                      <button id="calibrationStopBtn" class="btn btn-small" style="background: #ef444420; color: #ef4444; border: 1px solid #ef4444; display: none;">
+                        ■ Stop
+                      </button>
+                      <button id="calibrationResetBtn" class="btn btn-small" style="background: transparent; color: #888; border: 1px solid #444; display: none;">
+                        ↻ Reset
+                      </button>
+                    </div>
                    
                    <!-- Z-Score Bars (shown after calibration) -->
                    <div id="zscoreBars" style="display: none;">
@@ -641,11 +697,15 @@
                    </div>
                    <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
                  </div>
-                 <div class="chart-container">
-                   <h3>🎛️ FFT Spectrum + Power Bands</h3>
-                  <p class="sensor-info">Left: live frequency spectrum (0–60 Hz) with band regions color-coded. Right: all 5 band powers as animated bars with sparkline histories. Shows how spectral energy distributes across bands in real time.</p>
-                  <canvas id="fftSpectrumCanvas" width="1100" height="350" style="width:100%;height:300px;border-radius:8px;background:#0d1117;"></canvas>
-                </div>
+                  <div class="chart-container">
+                    <h3>🎛️ FFT Spectrum + Power Bands</h3>
+                    <div style="padding: 12px 16px; background: var(--bg-tertiary); border-left: 3px solid #3b82f6; margin-bottom: 12px; border-radius: 4px;">
+                      <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                        <strong style="color: #3b82f6;">📊 FFT Spectrum + Power Bands:</strong> <strong>Left pane:</strong> Real-time frequency spectrum (0–60 Hz) showing where energy is distributed. Colored regions mark band boundaries (δ θ α β γ). <strong>Right pane:</strong> All 5 band powers as animated bars + tiny history sparklines. Use the channel selector (TP9/AF7/AF8/TP10) to view different electrode sites.
+                      </p>
+                    </div>
+                   <canvas id="fftSpectrumCanvas" width="1100" height="350" style="width:100%;height:300px;border-radius:8px;background:#0d1117;"></canvas>
+                 </div>
               </div>
 
               <!-- Quad View Tab (4 panes - each selectable) -->
@@ -724,10 +784,14 @@
                   <button class="settings-toggle" id="settingsToggle">⚙️ Settings</button>
                 </div>
                 <div class="chart-container">
-                  <h3>🌊 3D Waterfall — IBVA-style</h3>
-                 <p class="sensor-info">Band power across all electrodes stacked in time (newer traces in front). Each line = one time snapshot. Height = amplitude. Inspired by the IBVA system's waterfall display for seeing temporal patterns in band power.</p>
-                 <canvas id="waterfallCanvas" width="1300" height="580" style="width:100%;height:440px;border-radius:8px;background:#0d1117;"></canvas>
-               </div>
+                   <h3>🌊 3D Waterfall — IBVA-style</h3>
+                   <div style="padding: 12px 16px; background: var(--bg-tertiary); border-left: 3px solid #22c55e; margin-bottom: 12px; border-radius: 4px;">
+                     <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                       <strong style="color: #22c55e;">📈 3D Waterfall Spectrogram:</strong> Time-frequency visualization where each horizontal line represents one EEG snapshot (frequency spectrum). Lines are stacked in time with newer data in front. Height/brightness shows band power intensity. Perfect for spotting temporal patterns like alpha waves growing during meditation or theta bursts during drowsiness. Inspired by IBVA professional neurofeedback systems.
+                     </p>
+                   </div>
+                  <canvas id="waterfallCanvas" width="1300" height="580" style="width:100%;height:440px;border-radius:8px;background:#0d1117;"></canvas>
+                </div>
              </div>
 
              <!-- Phase Tab -->
@@ -761,44 +825,28 @@
              </div>
 
              <!-- Motion Tab -->
-              <div id="motion" class="tab-pane">
-                <div style="display: flex; flex-direction: column; gap: 16px; padding: 16px; height: 100%;">
-                  <div class="chart-container" style="flex: 1;">
-                    <h3>💨 Accelerometer (10 Hz)</h3>
-                    <p class="sensor-info">X, Y, Z axes in g (gravity units)</p>
-                    <canvas id="accelChart" width="1000" height="300" style="width:100%;height:100%;border-radius:8px;background:#0d1117;"></canvas>
+               <div id="motion" class="tab-pane">
+                 <div style="display: flex; flex-direction: column; gap: 16px; padding: 16px; height: 100%;">
+                   <!-- Description -->
+                   <div style="padding: 12px 16px; background: var(--bg-tertiary); border-left: 3px solid #ef4444; margin-bottom: 4px; border-radius: 4px;">
+                     <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                       <strong style="color: #ef4444;">📍 Motion Sensors:</strong> Real-time 3-axis accelerometer (linear motion in g-units) and gyroscope (rotational velocity in °/sec). Use to detect head movement artifacts in EEG, monitor posture stability, or track physical activity correlated with brain state.
+                     </p>
+                   </div>
+                   
+                   <div class="chart-container" style="flex: 1;">
+                     <h3>💨 Accelerometer (10 Hz)</h3>
+                     <p class="sensor-info">X (forward/back), Y (left/right), Z (up/down) in g-units</p>
+                     <canvas id="accelChart" width="1000" height="300" style="width:100%;height:100%;border-radius:8px;background:#0d1117;"></canvas>
+                   </div>
+                   <div class="chart-container" style="flex: 1;">
+                     <h3>🔄 Gyroscope (10 Hz)</h3>
+                     <p class="sensor-info">Roll, Pitch, Yaw rotation rates in degrees/second</p>
+                     <canvas id="gyroChart" width="1000" height="300" style="width:100%;height:100%;border-radius:8px;background:#0d1117;"></canvas>
+                   </div>
                   </div>
-                  <div class="chart-container" style="flex: 1;">
-                    <h3>🔄 Gyroscope (10 Hz)</h3>
-                    <p class="sensor-info">Rotation rates around X, Y, Z axes</p>
-                    <canvas id="gyroChart" width="1000" height="300" style="width:100%;height:100%;border-radius:8px;background:#0d1117;"></canvas>
-                  </div>
+                 </div>
                 </div>
-               </div>
-                 </div>
-                  <div class="chart-container">
-                    <h3>🔄 Gyroscope (10 Hz)</h3>
-                    <p class="sensor-info">Rotation rates around X, Y, Z axes</p>
-                    <canvas id="gyroChart" width="600" height="250" style="width:100%;height:200px;border-radius:8px;background:#0d1117;"></canvas>
-                   <div style="margin-top: 8px; font-size: 0.85rem;">
-                     <div>X: <span id="gyroXValue">0.00</span> °/s</div>
-                     <div>Y: <span id="gyroYValue">0.00</span> °/s</div>
-                     <div>Z: <span id="gyroZValue">0.00</span> °/s</div>
-                   </div>
-                 </div>
-                  <div class="chart-container">
-                    <h3>❤️ Heart Rate / PPG (1 Hz)</h3>
-                    <p class="sensor-info">Red, Green, Infrared LED readings</p>
-                    <canvas id="ppgChart" width="600" height="250" style="width:100%;height:200px;border-radius:8px;background:#0d1117;"></canvas>
-                   <div style="margin-top: 8px; font-size: 0.85rem;">
-                     <div>Red: <span id="ppgRedValue">0</span></div>
-                     <div>Green: <span id="ppgGreenValue">0</span></div>
-                     <div>IR: <span id="ppgIRValue">0</span></div>
-                   </div>
-                 </div>
-
-               </div>
-              </div>
 
              <!-- DSP Processing Tab -->
              <div id="dsp" class="tab-pane">

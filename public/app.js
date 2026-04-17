@@ -29,6 +29,134 @@ const selectorState = {
   selectedChannel: "TP9", // Which channel to highlight in FFT
 };
 
+// ============================================================================
+// Device & Visualization Metadata
+// ============================================================================
+
+const DEVICE_INFO = {
+  "muse-2": {
+    name: "Muse 2",
+    icon: "🧠",
+    channels: 4,
+    channelNames: ["TP9", "AF7", "AF8", "TP10"],
+    extras: ["PPG", "Accelerometer", "Gyroscope"],
+    description: "Consumer-grade EEG headband with 4 dry electrodes",
+    specs: "256 Hz sampling, 10-20 placement",
+  },
+  "muse-s": {
+    name: "Muse S / Athena",
+    icon: "🧠",
+    channels: 4,
+    channelNames: ["TP9", "AF7", "AF8", "TP10"],
+    extras: ["PPG", "fNIRS", "Accelerometer", "Gyroscope"],
+    description:
+      "Premium EEG headband with optical sensors for advanced metrics",
+    specs: "256 Hz sampling, PPG + fNIRS optical",
+  },
+  ganglion: {
+    name: "OpenBCI Ganglion",
+    icon: "🎛️",
+    channels: 4,
+    channelNames: ["Ch1", "Ch2", "Ch3", "Ch4"],
+    extras: ["Accelerometer", "Gyroscope"],
+    description: "Research-grade 4-channel wireless EEG system",
+    specs: "200 Hz sampling, ultra-low noise",
+  },
+  ultracortex: {
+    name: "OpenBCI Ultracortex",
+    icon: "👑",
+    channels: 16,
+    channelNames: [
+      "Fp1",
+      "Fp2",
+      "F3",
+      "F4",
+      "C3",
+      "C4",
+      "P3",
+      "P4",
+      "O1",
+      "O2",
+      "F7",
+      "F8",
+      "T3",
+      "T4",
+      "T5",
+      "T6",
+    ],
+    extras: ["Accelerometer", "Gyroscope"],
+    description: "Professional 16-channel 10-20 system EEG cap",
+    specs: "250 Hz sampling, full brain coverage",
+  },
+};
+
+const VISUALIZATION_DESCRIPTIONS = {
+  bands:
+    "🎨 Band Power: Real-time power in δ θ α β γ frequency bands. Green = high power.",
+  fft: "📊 FFT Spectrum: Frequency domain visualization with overlaid band regions (colored).",
+  waterfall:
+    "📈 Waterfall: Time-frequency spectrogram showing how bands change over time.",
+  phase:
+    "🔄 Phase Polar: EEG phase coherence plot across channels—shows synchronization.",
+  ppg: "❤️ PPG/HR: Photoplethysmography heart rate + blood oxygen (Muse S/Athena only).",
+  motion: "📍 Motion: Accelerometer (3-axis) and gyroscope (angular velocity).",
+  mindmetrics:
+    "🧠 Mind Metrics: Personalized attention, meditation, drowsiness using z-score baselines.",
+};
+
+const COLOR_PALETTES = {
+  default: {
+    name: "Default (NeuroVis)",
+    primary: "#6366f1",
+    accent: "#f59e0b",
+    success: "#22c55e",
+    danger: "#ef4444",
+    info: "#3b82f6",
+    bg: "#0d1117",
+    text: "#e6edf3",
+  },
+  dark: {
+    name: "Dark (High Contrast)",
+    primary: "#00ffff",
+    accent: "#ffff00",
+    success: "#00ff00",
+    danger: "#ff0000",
+    info: "#00aaff",
+    bg: "#000000",
+    text: "#ffffff",
+  },
+  warm: {
+    name: "Warm (Sunset)",
+    primary: "#ff6b6b",
+    accent: "#ffa500",
+    success: "#90ee90",
+    danger: "#ff4500",
+    info: "#87ceeb",
+    bg: "#1a0f0a",
+    text: "#f5e6d3",
+  },
+  cool: {
+    name: "Cool (Ocean)",
+    primary: "#00bcd4",
+    accent: "#64b5f6",
+    success: "#4caf50",
+    danger: "#e91e63",
+    info: "#2196f3",
+    bg: "#0a1420",
+    text: "#b0d4e3",
+  },
+  solarized: {
+    name: "Solarized",
+    primary: "#268bd2",
+    accent: "#b58900",
+    success: "#859900",
+    danger: "#dc322f",
+    info: "#2aa198",
+    bg: "#002b36",
+    text: "#839496",
+  },
+};
+
 // ── FFT Spectrum + Power Bands (NeuroVis-style) ──
 function updateFFTSpectrumCanvas() {
   const canvasId =
@@ -982,6 +1110,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Initialize Mind Metrics
   initMindMetrics();
 
+  // Initialize color palette selector
+  initializeColorPalette();
+
   // Continuous canvas visualization updates (run on every frame, even if tab not active)
   // This keeps data flowing to waterfall, FFT, phase, etc. so they're ready when you switch tabs
   function canvasUpdateLoop() {
@@ -1592,10 +1723,39 @@ function handleDeviceList(devices) {
       const borderStyle = isSelected
         ? "4px solid #00ff88; box-shadow: 0 0 10px #00ff88;"
         : "4px solid #333;";
+
+      // Infer device type from name
+      let deviceType = "muse-2";
+      if (device.name.includes("Muse S") || device.name.includes("Athena"))
+        deviceType = "muse-s";
+      if (device.name.includes("Ganglion")) deviceType = "ganglion";
+      if (device.name.includes("Ultracortex")) deviceType = "ultracortex";
+
+      const info = DEVICE_INFO[deviceType];
+
       return `
-    <div class="device-card" onclick="connectDevice(${idx})" style="border: ${borderStyle}; cursor: pointer; transition: all 0.2s;">
-      <div class="device-name">${device.name} ${isSelected ? "✓" : ""}</div>
-      <div class="device-signal">🔋 ${device.battery || "?"}%</div>
+    <div class="device-card" onclick="connectDevice(${idx})" style="border: ${borderStyle}; cursor: pointer; transition: all 0.2s; padding: 12px; background: var(--bg-secondary); border-radius: 6px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span style="font-size: 1.2rem;">${info.icon}</span>
+        <div style="flex: 1;">
+          <div class="device-name" style="font-weight: 700; margin: 0; color: #00ff88;">${device.name} ${isSelected ? "✓" : ""}</div>
+          <div style="font-size: 0.7rem; color: #888; margin: 2px 0;">${info.name}</div>
+        </div>
+      </div>
+      <div style="padding-top: 8px; border-top: 1px solid #333; font-size: 0.75rem; color: #999;">
+        <div style="margin-bottom: 4px;">
+          <strong style="color: #00ff88;">Channels:</strong> ${info.channels} × ${info.channelNames.join(", ")}
+        </div>
+        <div style="margin-bottom: 4px;">
+          <strong style="color: #00ff88;">Extras:</strong> ${info.extras.join(", ")}
+        </div>
+        <div style="margin-bottom: 4px;">
+          <strong style="color: #00ff88;">Specs:</strong> ${info.specs}
+        </div>
+        <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #555; color: #aaa;">
+          🔋 Battery: ${device.battery || "?"}%
+        </div>
+      </div>
     </div>
   `;
     })
@@ -4516,4 +4676,59 @@ function initMindMetrics() {
       calculateMindMetrics();
     }
   }, 1000);
+}
+
+// ============================================================================
+// Color Palette Management
+// ============================================================================
+
+function initializeColorPalette() {
+  const selector = document.getElementById("colorPaletteSelector");
+  if (!selector) return;
+
+  // Load saved palette preference from localStorage
+  const savedPalette = localStorage.getItem("colorPalette") || "default";
+  selector.value = savedPalette;
+  applyColorPalette(savedPalette);
+
+  // Listen for changes
+  selector.addEventListener("change", (e) => {
+    const paletteName = e.target.value;
+    localStorage.setItem("colorPalette", paletteName);
+    applyColorPalette(paletteName);
+    console.log(`🎨 Color palette switched to: ${paletteName}`);
+  });
+}
+
+function applyColorPalette(paletteName) {
+  const palette = COLOR_PALETTES[paletteName];
+  if (!palette) {
+    console.warn(`❌ Unknown palette: ${paletteName}`);
+    return;
+  }
+
+  // Apply CSS variables to root
+  const root = document.documentElement;
+  root.style.setProperty("--primary", palette.primary);
+  root.style.setProperty("--accent", palette.accent);
+  root.style.setProperty("--success", palette.success);
+  root.style.setProperty("--danger", palette.danger);
+  root.style.setProperty("--info", palette.info);
+
+  // Update specific element colors for better visual feedback
+  const statusIndicators = document.querySelectorAll(".status .dot");
+  statusIndicators.forEach((dot) => {
+    dot.style.backgroundColor = palette.success;
+  });
+
+  const activeButtons = document.querySelectorAll(".btn-primary, .active");
+  activeButtons.forEach((btn) => {
+    if (btn.classList.contains("btn-primary")) {
+      btn.style.backgroundColor = palette.primary + "20";
+      btn.style.color = palette.primary;
+      btn.style.borderColor = palette.primary;
+    }
+  });
+
+  console.log(`✨ Applied palette: ${paletteName}`);
 }
