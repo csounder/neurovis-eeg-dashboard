@@ -1240,6 +1240,27 @@ app.get("/api/status", (req, res) => {
   });
 });
 
+app.get("/api/ports", (req, res) => {
+  // Return detected Bluetooth devices from MuseBridge
+  // Format: { ports: [], bluetooth: [ { name, mac, device_type }, ... ] }
+  const bluetoothDevices = connectedDevices.map((dev) => ({
+    name: dev.name,
+    mac: dev.mac || "",
+    device_type: dev.specs?.name?.toLowerCase().includes("athena")
+      ? "muse_athena"
+      : dev.specs?.name?.toLowerCase().includes("Muse S")
+        ? "muse_s"
+        : dev.specs?.name?.toLowerCase().includes("Muse 2")
+          ? "muse_2"
+          : "unknown",
+  }));
+
+  res.json({
+    ports: [], // No serial ports for Muse (uses Bluetooth via MuseBridge)
+    bluetooth: bluetoothDevices,
+  });
+});
+
 app.get("/api/devices", (req, res) => {
   res.json({ devices: connectedDevices });
 });
