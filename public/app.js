@@ -2131,23 +2131,29 @@ function setupEventListeners() {
   // Biofeedback Thresholds
   initializeBiofeedback();
 
-  // DSP Pipeline Controls
+  // DSP Pipeline Controls (sidebar only)
   // Filters
-  document.getElementById("notchFilter").addEventListener("change", (e) => {
-    lastSliderUpdate["applyNotch"] = Date.now(); // Track when we edited this
-    document.getElementById("notchStatus").textContent = e.target.checked
-      ? "ON"
-      : "OFF";
-    updateDSPSetting("applyNotch", e.target.checked);
-  });
+  const notchFilter = document.getElementById("notchFilter");
+  if (notchFilter) {
+    notchFilter.addEventListener("change", (e) => {
+      lastSliderUpdate["applyNotch"] = Date.now(); // Track when we edited this
+      const notchStatus = document.getElementById("notchStatus");
+      if (notchStatus)
+        notchStatus.textContent = e.target.checked ? "ON" : "OFF";
+      updateDSPSetting("applyNotch", e.target.checked);
+    });
+  }
 
-  document.getElementById("bandpassFilter").addEventListener("change", (e) => {
-    lastSliderUpdate["applyBandpass"] = Date.now(); // Track when we edited this
-    document.getElementById("bandpassStatus").textContent = e.target.checked
-      ? "ON"
-      : "OFF";
-    updateDSPSetting("applyBandpass", e.target.checked);
-  });
+  const bandpassFilter = document.getElementById("bandpassFilter");
+  if (bandpassFilter) {
+    bandpassFilter.addEventListener("change", (e) => {
+      lastSliderUpdate["applyBandpass"] = Date.now(); // Track when we edited this
+      const bandpassStatus = document.getElementById("bandpassStatus");
+      if (bandpassStatus)
+        bandpassStatus.textContent = e.target.checked ? "ON" : "OFF";
+      updateDSPSetting("applyBandpass", e.target.checked);
+    });
+  }
 
   // OSC Stream Selection
   const oscStreamRawEEG = document.getElementById("oscStreamRawEEG");

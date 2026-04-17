@@ -947,58 +947,19 @@
           [open],
         );
 
-         // Register callback for server device_list messages
-         useEffect(
-           function () {
-             // Store setBtDevs in global so app.js can call it when device_list arrives
-             window._reactSetBtDevs = function (devices) {
-               console.log(
-                 "[NeuroVis] Auto-updating device list from WebSocket:",
-                 devices.length,
-                 "devices",
-               );
-               setBtDevs(devices);
-             };
-             return function () {
-               window._reactSetBtDevs = null;
-             };
-           },
-           [],
-         );
-                // Convert server devices to btDevs format
-                var newBtDevs = msg.devices.map(function (dev) {
-                  return {
-                    name: dev.name,
-                    mac: dev.mac || "",
-                    device_type: dev.specs?.name
-                      ?.toLowerCase()
-                      .includes("athena")
-                      ? "muse_athena"
-                      : dev.specs?.name?.toLowerCase().includes("Muse S")
-                        ? "muse_s"
-                        : dev.specs?.name?.toLowerCase().includes("Muse 2")
-                          ? "muse_2"
-                          : "unknown",
-                  };
-                });
-                setBtDevs(newBtDevs);
-              }
-            } catch (e) {
-              // Ignore parse errors for non-JSON messages
-            }
+        // Register callback for server device_list messages
+        useEffect(function () {
+          // Store setBtDevs in global so app.js can call it when device_list arrives
+          window._reactSetBtDevs = function (devices) {
+            console.log(
+              "[NeuroVis] Auto-updating device list from WebSocket:",
+              devices.length,
+              "devices",
+            );
+            setBtDevs(devices);
           };
-
-          // Add message listener
-          if (window.ws) {
-            window.ws.addEventListener("message", handleDeviceList);
-            console.log("[NeuroVis] Added WebSocket device_list listener");
-          }
-
-          // Cleanup
           return function () {
-            if (window.ws) {
-              window.ws.removeEventListener("message", handleDeviceList);
-            }
+            window._reactSetBtDevs = null;
           };
         }, []);
 
