@@ -74,6 +74,8 @@
       function _startLivePoll() {
         if (_livePollTimer) return;
         _liveActive = true;
+        window._nv_signal = true; // Enable live data display mode
+        console.log("[NeuroVis] Live polling started — using real Muse data");
         var _logCount = 0;
         _livePollTimer = setInterval(function () {
           fetch("/api/bands")
@@ -84,7 +86,7 @@
               if (!j.channels || j.channels.length === 0) return;
               if (_logCount < 3) {
                 console.log(
-                  "[NeuroVis] Live data:",
+                  "[NeuroVis] ✓ Real Muse data:",
                   j.channels.length,
                   "channels,",
                   j.bands.join("/"),
@@ -821,26 +823,32 @@
             timeout: timeout,
           });
 
-          // Send WebSocket select_device message to backend
-          if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-            console.log(
-              "[NeuroVis] Sending WebSocket select_device:",
-              deviceName,
-            );
-            window.ws.send(
-              JSON.stringify({
-                type: "select_device",
-                name: deviceName,
-              }),
-            );
+          // Helper function to send WebSocket message
+          var tryWebSocketConnect = function (retries) {
+            if (retries === undefined) retries = 10;
 
-            // Give backend a moment to process, then mark as connected
-            setTimeout(function () {
+            if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+              console.log(
+                "[NeuroVis] ✓ WebSocket OPEN — Sending select_device:",
+                deviceName,
+              );
+              window.ws.send(
+                JSON.stringify({
+                  type: "select_device",
+                  name: deviceName,
+                }),
+              );
+
+              // Mark as connected and start streaming
               setHwConn(true);
               setConnecting(false);
               p.setPaired(p.dev);
-              window._nv_signal = true;
-              // Auto-start streaming
+              // DO NOT set window._nv_signal = true here!
+              // Wait for real Muse data to arrive via _startLivePoll
+              console.log(
+                "[NeuroVis] Device paired - waiting for real Muse packets...",
+              );
+
               fetch("/api/start", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -853,62 +861,32 @@
                   if (j2.status === "ok") {
                     setStreaming(true);
                     _startLivePoll();
-                    console.log("[NeuroVis] Auto-started streaming");
+                    console.log("[NeuroVis] ✓ Streaming started");
                   }
                 })
                 .catch(function () {});
-            }, 500);
-          } else {
-            // WebSocket not available, fall back to REST API
-            console.log(
-              "[NeuroVis] WebSocket not ready, falling back to REST API",
-            );
-            fetch("/api/connect", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                device_type: apiDev,
-                serial_port: "",
-                mac_address: macAddr,
-                timeout: timeout,
-              }),
-            })
-              .then(function (r) {
-                return r.json();
-              })
-              .then(function (j) {
-                if (j.status === "ok") {
-                  setHwConn(true);
-                  setConnecting(false);
-                  p.setPaired(p.dev);
-                  window._nv_signal = true;
-                  // Auto-start streaming
-                  fetch("/api/start", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ buffer_size: 45000 }),
-                  })
-                    .then(function (r2) {
-                      return r2.json();
-                    })
-                    .then(function (j2) {
-                      if (j2.status === "ok") {
-                        setStreaming(true);
-                        _startLivePoll();
-                        console.log("[NeuroVis] Auto-started streaming");
-                      }
-                    })
-                    .catch(function () {});
-                } else {
-                  setConnecting(false);
-                  setConnErr(j.message || "Connection failed");
-                }
-              })
-              .catch(function (e) {
-                setConnecting(false);
-                setConnErr("Backend error: " + e.message);
-              });
-          }
+            } else if (retries > 0) {
+              console.log(
+                "[NeuroVis] WebSocket not ready yet (readyState=" +
+                  (window.ws ? window.ws.readyState : "undefined") +
+                  "), retrying in 100ms... (" +
+                  retries +
+                  " attempts left)",
+              );
+              setTimeout(function () {
+                tryWebSocketConnect(retries - 1);
+              }, 100);
+            } else {
+              console.error(
+                "[NeuroVis] WebSocket failed to connect, giving up",
+              );
+              setConnecting(false);
+              setConnErr("WebSocket connection failed. Restart server.");
+            }
+          };
+
+          // Start trying to connect via WebSocket
+          tryWebSocketConnect();
         }
         function doStart() {
           setStarting(true);

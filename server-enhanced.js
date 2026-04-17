@@ -1244,6 +1244,35 @@ app.get("/api/devices", (req, res) => {
   res.json({ devices: connectedDevices });
 });
 
+app.get("/api/bands", (req, res) => {
+  // Live band power polling endpoint for React UI
+  // Returns current band powers for all 4 channels (TP9, AF7, AF8, TP10)
+  const channels = ["TP9", "AF7", "AF8", "TP10"];
+  const bands = ["delta", "theta", "alpha", "beta", "gamma"];
+
+  // If we have real Muse data, return it
+  if (currentBandPowers.absolute && currentBandPowers.relative) {
+    const values = channels.map((ch) =>
+      bands.map((band) => currentBandPowers.absolute[band] || 0),
+    );
+    res.json({
+      channels: channels,
+      bands: bands,
+      values: values,
+      timestamp: Date.now(),
+    });
+  } else {
+    // No real data yet - return empty structure
+    const values = channels.map(() => bands.map(() => 0));
+    res.json({
+      channels: channels,
+      bands: bands,
+      values: values,
+      timestamp: Date.now(),
+    });
+  }
+});
+
 app.get("/api/settings", (req, res) => {
   res.json(settings);
 });

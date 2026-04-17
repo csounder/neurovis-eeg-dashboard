@@ -1169,7 +1169,14 @@ function initCharts() {
   const canvases = ["chart1", "chart2", "chart3", "chart4"];
 
   canvases.forEach((id, idx) => {
-    const ctx = document.getElementById(id).getContext("2d");
+    const canvas = document.getElementById(id);
+    if (!canvas) {
+      console.log(
+        `[NeuroVis] Canvas #${id} not found (using React UI) — skipping Chart.js init`,
+      );
+      return; // Skip if canvas doesn't exist (React UI mode)
+    }
+    const ctx = canvas.getContext("2d");
     state.charts[idx] = new Chart(ctx, {
       type: "line",
       data: {
