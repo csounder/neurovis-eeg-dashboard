@@ -973,6 +973,9 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(updateStats, 1000);
   setInterval(updatePerformanceMetrics, 1000);
 
+  // Initialize Mind Metrics
+  initMindMetrics();
+
   // Continuous canvas visualization updates (run on every frame, even if tab not active)
   // This keeps data flowing to waterfall, FFT, phase, etc. so they're ready when you switch tabs
   function canvasUpdateLoop() {
@@ -4162,3 +4165,189 @@ setTimeout(() => {
     });
   }
 }, 100);
+
+// ============================================================================
+// Mind Metrics - Attention, Meditation, Drowsiness
+// ============================================================================
+
+const mindMetrics = {
+  attentionHistory: [],
+  meditationHistory: [],
+  drowsinessHistory: [],
+  maxHistoryLength: 120, // Keep 2 minutes of data (1 per second)
+};
+
+function calculateMindMetrics() {
+  const rel = state.bandPowers.relative || {};
+  const delta = rel.delta || 0.001;
+  const theta = rel.theta || 0.001;
+  const alpha = rel.alpha || 0.001;
+  const beta = rel.beta || 0.001;
+  const gamma = rel.gamma || 0.001;
+
+  // Attention: Beta / (Alpha + Theta)
+  const attention = beta / (alpha + theta);
+
+  // Meditation: Alpha / (Beta + Gamma)
+  const meditation = alpha / (beta + gamma);
+
+  // Drowsiness: Delta / (Alpha + Beta)
+  const drowsiness = delta / (alpha + beta);
+
+  // Store in history
+  mindMetrics.attentionHistory.push(attention);
+  mindMetrics.meditationHistory.push(meditation);
+  mindMetrics.drowsinessHistory.push(drowsiness);
+
+  if (mindMetrics.attentionHistory.length > mindMetrics.maxHistoryLength) {
+    mindMetrics.attentionHistory.shift();
+    mindMetrics.meditationHistory.shift();
+    mindMetrics.drowsinessHistory.shift();
+  }
+
+  // Update UI
+  updateMindMetricsDisplay(attention, meditation, drowsiness);
+
+  return { attention, meditation, drowsiness };
+}
+
+function updateMindMetricsDisplay(attention, meditation, drowsiness) {
+  // Update metric values
+  const attentionEl = document.getElementById("metricAttention");
+  const meditationEl = document.getElementById("metricMeditation");
+  const drowsinessEl = document.getElementById("metricDrowsiness");
+
+  if (attentionEl) attentionEl.textContent = attention.toFixed(1);
+  if (meditationEl) meditationEl.textContent = meditation.toFixed(1);
+  if (drowsinessEl) drowsinessEl.textContent = drowsiness.toFixed(1);
+
+  // Update status indicators
+  updateMetricStatus(
+    attention,
+    document.getElementById("attentionStatus"),
+    "Focused Thinking",
+    "Low engagement",
+    50,
+  );
+  updateMetricStatus(
+    meditation,
+    document.getElementById("meditationStatus"),
+    "Deep Calm",
+    "Active thinking",
+    100,
+  );
+  updateMetricStatus(
+    drowsiness,
+    document.getElementById("drowsinessStatus"),
+    "Alert & Awake",
+    "Drowsy",
+    30,
+  );
+
+  // Update timeline charts
+  updateMindMetricsCharts();
+}
+
+function updateMetricStatus(value, element, highLabel, lowLabel, threshold) {
+  if (!element) return;
+  const isHigh = value > threshold;
+  element.textContent = isHigh ? `✓ ${highLabel}` : `⚠ ${lowLabel}`;
+  element.style.color = isHigh ? "#22c55e" : "#f59e0b";
+  element.parentElement.style.borderLeftColor = isHigh ? "#22c55e" : "#f59e0b";
+}
+
+function updateMindMetricsCharts() {
+  const maxLen = Math.max(
+    mindMetrics.attentionHistory.length,
+    mindMetrics.meditationHistory.length,
+    mindMetrics.drowsinessHistory.length,
+  );
+
+  // Attention chart
+  updateMindMetricCanvas(
+    "metricsAttentionChart",
+    mindMetrics.attentionHistory,
+    "#f59e0b",
+    "Attention",
+  );
+
+  // Meditation chart
+  updateMindMetricCanvas(
+    "metricsMeditationChart",
+    mindMetrics.meditationHistory,
+    "#22c55e",
+    "Meditation",
+  );
+
+  // Drowsiness chart
+  updateMindMetricCanvas(
+    "metricsDrowsinessChart",
+    mindMetrics.drowsinessHistory,
+    "#ef4444",
+    "Drowsiness",
+  );
+}
+
+function updateMindMetricCanvas(canvasId, data, color, label) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || data.length === 0) return;
+
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // Clear
+  ctx.fillStyle = "#0d1117";
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = "#222";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 10; i++) {
+    const y = (H / 10) * i;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  // Find min/max
+  const min = Math.min(...data);
+  const max = Math.max(...data, 1); // At least 1 for scale
+
+  // Draw waveform
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  data.forEach((val, i) => {
+    const x = (i / (data.length - 1 || 1)) * W;
+    const normalized = (val - min) / (max - min || 1);
+    const y = H - normalized * (H - 20) - 10;
+
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+
+  ctx.stroke();
+
+  // Label
+  ctx.fillStyle = color;
+  ctx.font = "bold 10px monospace";
+  ctx.fillText(label, 10, 18);
+
+  // Scale labels
+  ctx.fillStyle = "#666";
+  ctx.font = "8px monospace";
+  ctx.fillText(max.toFixed(1), W - 40, 12);
+  ctx.fillText("0", W - 40, H - 4);
+}
+
+// Initialize Mind Metrics updates
+function initMindMetrics() {
+  // Update mind metrics every second
+  setInterval(() => {
+    if (state.bandPowers.relative) {
+      calculateMindMetrics();
+    }
+  }, 1000);
+}
