@@ -979,6 +979,16 @@ function handleWebSocketMessage(msg, ws) {
         console.log(`✓ Found device at index ${deviceIndex}`);
         const currentDeviceToSelect = connectedDevices[deviceIndex];
         console.log(`🔗 Connecting to ${currentDeviceToSelect.displayName}`);
+
+        // Auto-set OSC prefix based on device type
+        if (currentDeviceToSelect.specs?.name?.includes("Muse")) {
+          settings.oscPrefix = "/muse";
+        } else if (currentDeviceToSelect.specs?.name?.includes("Ganglion")) {
+          settings.oscPrefix = "/ganglion";
+        } else if (currentDeviceToSelect.specs?.name?.includes("Ultracortex")) {
+          settings.oscPrefix = "/openbci";
+        }
+        console.log(`📡 OSC prefix set to: ${settings.oscPrefix}`);
         console.log(
           `   ├─ EEG Channels: ${currentDeviceToSelect.specs.eegChannels} @ ${currentDeviceToSelect.specs.eegSampleRate}Hz`,
         );
@@ -1347,7 +1357,56 @@ app.get("/api/settings", (req, res) => {
   res.json(settings);
 });
 
+app.get("/api/osc/config", (req, res) => {
+  // Show current OSC configuration
+  res.json({
+    oscHost: config.oscHost,
+    oscPort: config.oscPort,
+    oscPrefix: settings.oscPrefix,
+    oscStreams: settings.oscStreams,
+    messageExamples: {
+      bandRelative: [
+        `${settings.oscPrefix}/bands/relative/alpha (float 0.0-1.0)`,
+        `${settings.oscPrefix}/elements/alpha_relative (float 0.0-1.0)`,
+      ],
+      bandAbsolute: [
+        `${settings.oscPrefix}/bands/absolute/alpha (float dB)`,
+        `${settings.oscPrefix}/elements/alpha_absolute (float dB)`,
+      ],
+      allBands: ["delta", "theta", "alpha", "beta", "gamma"],
+    },
+  });
+});
+
+app.post("/api/osc/prefix", (req, res) => {
+  const { prefix } = req.body;
+  if (!prefix || !prefix.startsWith("/")) {
+    return res.status(400).json({ error: "Prefix must start with /" });
+  }
+  settings.oscPrefix = prefix;
+  console.log(`📡 OSC prefix changed to: ${prefix}`);
+  broadcastSettings();
+  res.json({ status: "updated", oscPrefix: settings.oscPrefix });
+});
+
 app.post("/api/settings", (req, res) => {
+  const { oscPrefix, oscStreams, simulatorMode } = req.body;
+
+  if (oscPrefix) {
+    settings.oscPrefix = oscPrefix;
+    console.log(`📡 OSC prefix changed to: ${oscPrefix}`);
+  }
+
+  if (oscStreams) {
+    settings.oscStreams = { ...settings.oscStreams, ...oscStreams };
+    console.log(`✓ OSC streams updated:`, settings.oscStreams);
+  }
+
+  if (simulatorMode !== undefined) {
+    settings.simulatorMode = simulatorMode;
+    console.log(`🎲 Simulator mode: ${simulatorMode ? "ON" : "OFF"}`);
+  }
+
   updateSettings(req.body);
   broadcastSettings();
   res.json({ status: "updated", settings });
