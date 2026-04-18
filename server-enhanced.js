@@ -537,8 +537,14 @@ function handleEEGPacket(packet) {
 
 function handleBandPowersPacket(packet) {
   // Store band powers (10 Hz rate from Muse)
-  if (!packet.absolute || !packet.relative) return;
+  if (!packet.absolute || !packet.relative) {
+    console.log("⚠️  bandPowers packet missing data:", packet);
+    return;
+  }
 
+  console.log(
+    `📊 Muse bandPowers received: α=${packet.relative.alpha?.toFixed(3)}`,
+  );
   packetCount++;
 
   // Store current band powers

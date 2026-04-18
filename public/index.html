@@ -992,7 +992,7 @@
                   ? th.wr + "08"
                   : th.c2,
               color: th.tx,
-              fontSize: 10,
+              fontSize: 12,
               fontWeight: 600,
             },
           },
@@ -3477,7 +3477,7 @@
         ].concat(
           hasAux("fnirs") ? [{ id: "fnirs", l: "fNIRS" }] : [],
           hasAux("ppg") ? [{ id: "ppg", l: "PPG/HR" }] : [],
-          hasAux("imu") ? [{ id: "imu", l: "IMU" }] : [],
+          hasAux("imu") ? [{ id: "imu", l: "IMU (accel+gyro)" }] : [],
         );
 
         // ── OSC Live Monitor ──
@@ -3863,9 +3863,8 @@
             ? [{ id: "fnirs", l: "fNIRS", i: "\uD83D\uDD34" }]
             : [],
           hasAux("ppg") ? [{ id: "ppg", l: "PPG/HR", i: "\u2665" }] : [],
-          hasAux("imu") ? [{ id: "imu", l: "IMU", i: "\u27C1" }] : [],
+          hasAux("imu") ? [{ id: "imu", l: "IMU (motion)", i: "\u27C1" }] : [],
           [
-            { id: "quad", l: "Quad View", i: "\u2B1A" },
             { id: "proc", l: "Processing", i: "\u2699" },
             { id: "osc", l: "OSC", i: "\u21C6" },
             { id: "oscmon", l: "OSC Monitor", i: "\u25C8" },
@@ -3919,14 +3918,14 @@
                     color: "#fff",
                   },
                 },
-                "\u26A1",
+                "🧠",
               ),
               h(
                 "div",
                 null,
                 h(
                   "div",
-                  { style: { fontSize: 12, fontWeight: 700 } },
+                  { style: { fontSize: 14, fontWeight: 700 } },
                   "NeuroVis EEG",
                 ),
                 h(
@@ -4032,7 +4031,7 @@
                     fontWeight: 700,
                   },
                 },
-                "\u2B1A Quad",
+                "\u2B1A QUAD VIEW",
               ),
               isRec &&
                 h(
