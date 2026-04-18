@@ -876,10 +876,14 @@ function broadcastBandPowers(absolute, relative) {
   // Update calibration if in progress
   updateCalibrationBaseline(relative);
 
-  // CRITICAL: Send to OSC EVERY TIME (no throttle!)
+  // CRITICAL SAFETY: Only send OSC if there's an active data source!
+  // This prevents sending stale/cached data when neither simulator nor hardware is active
   // PRIMARY TARGET: Csound (also Max/MSP, TouchDesigner, Unity)
   // Needs low-latency band power updates at native 10 Hz rate
-  sendBandPowersOSC(absolute, relative);
+  const hasActiveSource = settings.simulatorMode || packetCount > 0;
+  if (hasActiveSource) {
+    sendBandPowersOSC(absolute, relative);
+  }
 
   // Throttle WebSocket to avoid overwhelming browser clients (10 Hz = 100ms)
   if (now - lastBandPowersBroadcast < WS_BROADCAST_INTERVAL_MS) {

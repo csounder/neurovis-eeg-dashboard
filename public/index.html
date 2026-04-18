@@ -3981,7 +3981,16 @@
                 "button",
                 {
                   onClick: function () {
-                    setSimMode(!simMode);
+                    var nextMode = !simMode;
+                    setSimMode(nextMode);
+                    // Actually tell the backend!
+                    fetch("/api/settings", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ simulatorMode: nextMode }),
+                    }).catch(function (e) {
+                      console.error("Failed to toggle simulator:", e);
+                    });
                   },
                   style: {
                     padding: "2px 7px",
