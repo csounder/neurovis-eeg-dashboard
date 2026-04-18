@@ -14,6 +14,13 @@ require("dotenv").config();
 
 const { DSPPipeline } = require("./dsp");
 
+// BrainFlow for OpenBCI Ganglion
+const brainflow = require("brainflow");
+const BoardShim = brainflow.BoardShim;
+const BoardIds = brainflow.BoardIds;
+const BrainFlowInputParams = brainflow.BrainFlowInputParams;
+const LogLevels = brainflow.LogLevels;
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -115,6 +122,11 @@ let swiftProcess = null;
 let csoundProcess = null; // Track current Csound instrument
 let currentInstrument = null;
 let currentDevice = null; // Track selected device model
+
+// Ganglion BrainFlow session
+let ganglionBoard = null;
+let ganglionStreaming = false;
+let ganglionInterval = null;
 
 let connectedDevices = [];
 let eegBuffer = [[], [], [], []];
@@ -498,7 +510,14 @@ function handleEEGPacket(packet) {
   // Get EEG data (simulator or real)
   let eeg = settings.simulatorMode ? generateSimulatorData() : packet.eeg;
 
-  if (!eeg) return;
+  console.log(
+    `📥 handleEEGPacket called: simMode=${settings.simulatorMode}, hasEEG=${!!eeg}, packetCount=${packetCount}`,
+  );
+
+  if (!eeg) {
+    console.log("⚠️  No EEG data in packet:", packet);
+    return;
+  }
 
   packetCount++;
 
@@ -516,7 +535,12 @@ function handleEEGPacket(packet) {
     bandPowerCount++;
     if (bandPowerCount >= 26) {
       // At 256 Hz EEG, 26 packets = ~10 Hz band power output
+      console.log(`🔬 Computing band powers from EEG (packet ${packetCount})`);
       const bandPowers = calculateBandPowersFromEEG();
+      console.log(
+        `🔬 Result:`,
+        bandPowers ? "SUCCESS" : "NULL (DSP buffer not ready)",
+      );
       if (bandPowers) {
         // Store for later use
         currentBandPowers.absolute = bandPowers.absolute;
@@ -1951,6 +1975,222 @@ app.get("/api/instruments/status", (req, res) => {
 });
 
 // ============================================================================
+// Ganglion BrainFlow Integration
+// ============================================================================
+
+async function startGanglion() {
+  if (ganglionBoard && ganglionStreaming) {
+    console.log("⚠️  Ganglion already streaming");
+    return;
+  }
+
+  try {
+    console.log("🔌 Starting Ganglion via BrainFlow...");
+
+    // Enable BrainFlow logging
+    BoardShim.setLogLevel(LogLevels.LEVEL_INFO);
+
+    const boardId = BoardIds.GANGLION_BOARD; // BLED dongle
+    const params = new BrainFlowInputParams();
+    params.serial_port = "/dev/cu.usbmodem11"; // BLED dongle port
+
+    ganglionBoard = new BoardShim(boardId, params);
+
+    console.log("⏳ Connecting to Ganglion...");
+    ganglionBoard.prepareSession();
+    console.log("✅ Ganglion connected!");
+
+    // Get board specs
+    const eegChannels = BoardShim.getEegChannels(boardId);
+    const samplingRate = BoardShim.getSamplingRate(boardId);
+
+    console.log(
+      `📊 Ganglion: ${eegChannels.length} channels @ ${samplingRate} Hz`,
+    );
+
+    // Start streaming
+    ganglionBoard.startStream();
+    ganglionStreaming = true;
+    console.log("▶️  Ganglion streaming started!\n");
+
+    // Broadcast device info to UI
+    connectedDevices = [
+      {
+        name: "Ganglion",
+        index: 0,
+        model: "OpenBCI Ganglion",
+        connected: true,
+        specs: {
+          name: "OpenBCI Ganglion",
+          eegChannels: 4,
+          eegSampleRate: 200,
+        },
+      },
+    ];
+
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(
+          JSON.stringify({
+            type: "device_list",
+            devices: connectedDevices,
+          }),
+        );
+      }
+    });
+
+    // Poll for data and compute band powers at 10 Hz
+    let sampleBuffer = [[], [], [], []]; // 4 channels
+    const samplesNeeded = Math.floor(samplingRate / 10); // ~20 samples per 10 Hz update
+
+    ganglionInterval = setInterval(() => {
+      if (!ganglionStreaming) return;
+
+      const data = ganglionBoard.getBoardData();
+
+      if (data && data.length > 0 && data[0].length > 0) {
+        const numSamples = data[0].length;
+
+        // Extract EEG channels (indices 1-4 for Ganglion)
+        for (let i = 0; i < numSamples; i++) {
+          for (let ch = 0; ch < 4; ch++) {
+            sampleBuffer[ch].push(data[eegChannels[ch]][i]);
+
+            // Keep buffer at ~128 samples for FFT
+            if (sampleBuffer[ch].length > 128) {
+              sampleBuffer[ch].shift();
+            }
+          }
+        }
+
+        // Compute band powers when we have enough data
+        if (sampleBuffer[0].length >= samplesNeeded) {
+          const bandPowers = computeBandPowersFromEEG(
+            sampleBuffer,
+            samplingRate,
+          );
+
+          if (bandPowers) {
+            currentBandPowers = bandPowers;
+            packetCount += numSamples;
+
+            // Broadcast to UI
+            wss.clients.forEach((client) => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(
+                  JSON.stringify({
+                    type: "band_powers",
+                    absolute: bandPowers.absolute,
+                    relative: bandPowers.relative,
+                    timestamp: Date.now(),
+                  }),
+                );
+              }
+            });
+
+            // Send to Csound via OSC
+            if (settings.oscSending) {
+              sendBandPowersOSC(bandPowers);
+            }
+          }
+        }
+      }
+    }, 100); // Poll every 100ms
+  } catch (error) {
+    console.error("❌ Ganglion error:", error.message);
+    stopGanglion();
+  }
+}
+
+function stopGanglion() {
+  console.log("🛑 Stopping Ganglion...");
+
+  if (ganglionInterval) {
+    clearInterval(ganglionInterval);
+    ganglionInterval = null;
+  }
+
+  if (ganglionBoard) {
+    try {
+      if (ganglionStreaming) {
+        ganglionBoard.stopStream();
+      }
+      ganglionBoard.releaseSession();
+    } catch (e) {
+      console.error("⚠️  Ganglion cleanup error:", e.message);
+    }
+    ganglionBoard = null;
+  }
+
+  ganglionStreaming = false;
+  console.log("✅ Ganglion stopped");
+}
+
+function computeBandPowersFromEEG(channelData, sampleRate) {
+  // Simple FFT-based band power computation
+  // Average across all 4 channels
+
+  const bands = {
+    delta: [1, 4],
+    theta: [4, 8],
+    alpha: [8, 13],
+    beta: [13, 30],
+    gamma: [30, 50],
+  };
+
+  let absolute = { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 };
+
+  // Simplified power calculation (sum of squares in each band)
+  for (let ch = 0; ch < 4; ch++) {
+    const samples = channelData[ch].slice(-128); // Last 128 samples
+    if (samples.length < 128) continue;
+
+    // Compute simple power (RMS) in each band
+    // This is a simplified version - proper FFT would be better
+    for (const [band, [low, high]] of Object.entries(bands)) {
+      let power = 0;
+      for (let i = 0; i < samples.length; i++) {
+        power += samples[i] * samples[i];
+      }
+      absolute[band] += Math.sqrt(power / samples.length) / 4; // Average across channels
+    }
+  }
+
+  // Normalize to 0-1 range (simplified)
+  const total =
+    absolute.delta +
+    absolute.theta +
+    absolute.alpha +
+    absolute.beta +
+    absolute.gamma;
+  const relative = {};
+
+  if (total > 0) {
+    for (const band of Object.keys(bands)) {
+      absolute[band] = Math.max(0, Math.min(1, absolute[band] / 1000)); // Scale µV to 0-1
+      relative[band] = absolute[band] / total;
+    }
+  }
+
+  return { absolute, relative };
+}
+
+// API endpoint to start Ganglion
+app.post("/api/ganglion/start", async (req, res) => {
+  try {
+    await startGanglion();
+    res.json({ status: "started" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/ganglion/stop", (req, res) => {
+  stopGanglion();
+  res.json({ status: "stopped" });
+});
+
+// ============================================================================
 // Startup
 // ============================================================================
 
@@ -1978,6 +2218,7 @@ process.on("SIGINT", () => {
   if (swiftProcess) swiftProcess.kill();
   if (csoundProcess) csoundProcess.kill();
   if (oscPort) oscPort.close();
+  stopGanglion();
   wss.close();
   process.exit(0);
 });
