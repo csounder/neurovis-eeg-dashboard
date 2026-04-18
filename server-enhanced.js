@@ -155,6 +155,9 @@ let settings = {
   wsRateHz: 10, // WebSocket dashboard rate (Hz)
   outputRateHz: 256, // EEG stream output rate (can be 10, 64, 128, 256, 512 Hz)
 
+  // OSC Master Control
+  oscSending: false, // MASTER ON/OFF - must be true to send ANY OSC (safety: default OFF)
+
   // OSC Stream Selection
   oscStreams: {
     rawEEG: false, // /muse/eeg - Raw 256 Hz EEG (HIGH BANDWIDTH - disable unless needed)
@@ -734,6 +737,9 @@ function handleFNIRSPacket(packet) {
 function sendOSCtoCSsound(eeg) {
   if (!oscPort) return;
 
+  // CRITICAL: Check if user enabled OSC sending
+  if (!settings.oscSending) return;
+
   try {
     // Apply post-OSC scaling
     let scaledEeg = eeg;
@@ -778,6 +784,9 @@ function sendOSCtoCSsound(eeg) {
 let oscBandPowerCount = 0;
 function sendBandPowersOSC(absolute, relative) {
   if (!oscPort) return;
+
+  // CRITICAL: Check if user enabled OSC sending
+  if (!settings.oscSending) return;
 
   try {
     const bands = ["delta", "theta", "alpha", "beta", "gamma"];

@@ -4009,7 +4009,16 @@
                 "button",
                 {
                   onClick: function () {
-                    setOscSending(!oscSending);
+                    var nextState = !oscSending;
+                    setOscSending(nextState);
+                    // Actually tell the backend!
+                    fetch("/api/settings", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ oscSending: nextState }),
+                    }).catch(function (e) {
+                      console.error("Failed to toggle OSC sending:", e);
+                    });
                   },
                   style: {
                     padding: "2px 7px",
