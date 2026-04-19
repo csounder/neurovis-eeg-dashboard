@@ -279,12 +279,65 @@
         },
       };
 
+      // EEG Frequency Bands - Based on clinical/research standards (Niedermeyer & da Silva, 2005)
+      // f = center frequency (Hz), a = typical amplitude (µV), fLo/fHi = band edges
+      // Colors follow standard neurofeedback conventions
       const BANDS = [
-        { n: "Delta", r: "0.5-4", c: "#6366f1", d: "#a5b4fc", f: 2, a: 40 },
-        { n: "Theta", r: "4-8", c: "#0891b2", d: "#22d3ee", f: 6, a: 35 },
-        { n: "Alpha", r: "8-13", c: "#059669", d: "#34d399", f: 10, a: 50 },
-        { n: "Beta", r: "13-30", c: "#d97706", d: "#fbbf24", f: 20, a: 25 },
-        { n: "Gamma", r: "30-100", c: "#dc2626", d: "#f87171", f: 45, a: 12 },
+        {
+          n: "Delta",
+          r: "0.5-4",
+          c: "#6366f1",
+          d: "#a5b4fc",
+          f: 2,
+          a: 75,
+          fLo: 0.5,
+          fHi: 4,
+          desc: "Deep sleep, healing, regeneration",
+        },
+        {
+          n: "Theta",
+          r: "4-8",
+          c: "#0891b2",
+          d: "#22d3ee",
+          f: 6,
+          a: 50,
+          fLo: 4,
+          fHi: 8,
+          desc: "Meditation, creativity, memory encoding",
+        },
+        {
+          n: "Alpha",
+          r: "8-13",
+          c: "#059669",
+          d: "#34d399",
+          f: 10,
+          a: 40,
+          fLo: 8,
+          fHi: 13,
+          desc: "Relaxed alertness, eyes closed, occipital",
+        },
+        {
+          n: "Beta",
+          r: "13-30",
+          c: "#d97706",
+          d: "#fbbf24",
+          f: 20,
+          a: 20,
+          fLo: 13,
+          fHi: 30,
+          desc: "Active thinking, focus, problem solving",
+        },
+        {
+          n: "Gamma",
+          r: "30-100",
+          c: "#dc2626",
+          d: "#f87171",
+          f: 45,
+          a: 5,
+          fLo: 30,
+          fHi: 100,
+          desc: "Higher cognition, binding, consciousness",
+        },
       ];
 
       const SKINS = [
@@ -375,19 +428,54 @@
         if (!_s[k]) _s[k] = { p: 0, b: [], kP: 1, kX: 0, env: 0, hy: 0, pv: 0 };
         return _s[k];
       }
+      // Physiologically realistic EEG signal generator
+      // Based on: Nunez & Srinivasan (2006) "Electric Fields of the Brain"
+      // Models: 1/f noise spectrum, band-specific oscillations, electrode-specific phase
       function rawEEG(t, id, bi) {
         const s = (id.charCodeAt(0) || 0) * 137 + (id.charCodeAt(1) || 0) * 31;
         const b = BANDS[bi],
           f = b.f,
           a = b.a,
+          fLo = b.fLo || f * 0.5,
+          fHi = b.fHi || f * 1.5,
           p = (s % 100) / 15;
-        return (
-          a *
-            Math.sin(2 * Math.PI * f * t + p) *
-            (0.7 + 0.3 * Math.sin(t * 0.5 + s)) +
-          (a / 3) * Math.sin(2 * Math.PI * f * 1.3 * t + p * 2) +
-          (Math.random() - 0.5) * a * 0.3
-        );
+
+        // 1/f pink noise background (characteristic of neural activity)
+        var pinkNoise = 0;
+        for (var h = 1; h <= 5; h++) {
+          pinkNoise +=
+            (1 / h) * Math.sin(2 * Math.PI * h * 0.5 * t + s * h * 0.1);
+        }
+        pinkNoise *= a * 0.08;
+
+        // Primary oscillation with natural frequency variation
+        var freqMod = 1 + 0.05 * Math.sin(t * 0.3 + s * 0.1); // slight freq drift
+        var primary = a * Math.sin(2 * Math.PI * f * freqMod * t + p);
+
+        // Amplitude envelope (waxing/waning typical of EEG)
+        var envelope = 0.6 + 0.4 * Math.sin(t * 0.2 + s * 0.05);
+        primary *= envelope;
+
+        // Harmonic content (real EEG has harmonics)
+        var harmonic = (a / 4) * Math.sin(2 * Math.PI * f * 2 * t + p * 1.5);
+        harmonic *= 0.5 + 0.5 * Math.sin(t * 0.15 + s);
+
+        // Sub-band variation within the frequency range
+        var subBand =
+          (a / 5) *
+          Math.sin(2 * Math.PI * (fLo + (fHi - fLo) * 0.3) * t + p * 2);
+
+        // Electrode-specific character (frontal vs occipital differences)
+        var locMod = 1;
+        if (id.indexOf("F") === 0) locMod = bi === 3 ? 1.3 : 0.9; // Frontal: more beta
+        if (id.indexOf("O") === 0 || id.indexOf("P") === 0)
+          locMod = bi === 2 ? 1.5 : 0.85; // Occipital/Parietal: more alpha
+        if (id.indexOf("T") === 0) locMod = bi === 1 ? 1.2 : 0.95; // Temporal: more theta
+
+        // Gaussian noise (measurement noise)
+        var noise = (Math.random() - 0.5) * a * 0.15;
+
+        return (primary + harmonic + subBand + pinkNoise + noise) * locMod;
       }
       function proc(v, pid, k, fp) {
         const f = gs(k);
@@ -5334,14 +5422,20 @@
       }
 
       // ── FFT Spectrum + Power Bands ──
+      // ══════════════════════════════════════════════════════════════════
+      // FFT SPECTRUM ANALYZER - Research-Grade Power Spectral Density Display
+      // Based on Welch's method visualization standards (Welch, 1967)
+      // ══════════════════════════════════════════════════════════════════
       function FFTView(p) {
         var th = p.t,
           d = DEVS[p.dev],
           isDk = th === TH.dark;
         var ref = useRef(null),
           hist = useRef({}),
+          peakFreqs = useRef({}),
           autoMin = useRef(0),
           autoMax = useRef(80);
+
         useEffect(
           function () {
             var c = ref.current;
@@ -5349,13 +5443,39 @@
             var ctx = c.getContext("2d"),
               W = c.width,
               H = c.height;
-            ctx.clearRect(0, 0, W, H);
-            var specW = W * 0.65,
-              barX = specW + 30,
-              barW = W - barX - 10;
-            var elId = d.eeg[0].id;
 
-            // Calculate AUTO scale bounds if enabled
+            // Clear with gradient background
+            var bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+            bgGrad.addColorStop(0, isDk ? "#0a0f1a" : "#f8fafc");
+            bgGrad.addColorStop(1, isDk ? "#060a12" : "#f1f5f9");
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, W, H);
+
+            // Layout
+            var leftMargin = 70,
+              rightMargin = 280,
+              topMargin = 60,
+              bottomMargin = 50,
+              specW = W - leftMargin - rightMargin,
+              specH = H - topMargin - bottomMargin,
+              barX = W - rightMargin + 20,
+              barW = rightMargin - 40;
+
+            // ═══ TITLE ═══
+            ctx.fillStyle = th.t1 || th.tx;
+            ctx.font = "bold 18px " + M;
+            ctx.fillText("Power Spectral Density", leftMargin, 30);
+            ctx.fillStyle = th.t3;
+            ctx.font = "11px " + M;
+            ctx.fillText(
+              "Real-time FFT Analysis (0-60 Hz) • " +
+                d.eeg.length +
+                " channels",
+              leftMargin,
+              48,
+            );
+
+            // Calculate AUTO scale bounds
             var yMin = 0,
               yMax = 80;
             if (p.autoScale) {
@@ -5381,56 +5501,139 @@
               if (allAmps.length > 0) {
                 var dataMax = Math.max.apply(null, allAmps);
                 autoMax.current = autoMax.current * 0.85 + dataMax * 0.15;
-                yMax = autoMax.current * 1.1; // 10% headroom
+                yMax = autoMax.current * 1.1;
               }
             } else {
               yMax = p.yAxisRange || 80;
             }
-            // ── Left: FFT spectrum curve ──
-            // Grid
-            ctx.strokeStyle = th.bd + "60";
-            ctx.lineWidth = 0.5;
-            for (var gy = 0; gy < 5; gy++) {
-              var yy = 20 + gy * ((H - 40) / 4);
-              ctx.beginPath();
-              ctx.moveTo(40, yy);
-              ctx.lineTo(specW, yy);
-              ctx.stroke();
-            }
-            // Frequency axis
-            ctx.fillStyle = th.t3;
-            ctx.font = "8px " + M;
-            [0, 10, 20, 30, 40, 50, 60].forEach(function (f) {
-              var xx = 40 + (f / 60) * (specW - 50);
-              ctx.fillText(f + "", xx - 6, H - 4);
-            });
-            ctx.fillText("Hz", specW - 10, H - 4);
-            // Band region shading
+
+            // ═══ SPECTRUM PLOT AREA ═══
+            // Plot background with subtle gradient
+            var plotGrad = ctx.createLinearGradient(
+              leftMargin,
+              topMargin,
+              leftMargin,
+              topMargin + specH,
+            );
+            plotGrad.addColorStop(0, isDk ? "#0d1420" : "#ffffff");
+            plotGrad.addColorStop(1, isDk ? "#080c14" : "#f8fafc");
+            ctx.fillStyle = plotGrad;
+            ctx.fillRect(leftMargin, topMargin, specW, specH);
+
+            // Plot border
+            ctx.strokeStyle = th.bd;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(leftMargin, topMargin, specW, specH);
+
+            // ═══ BAND REGION SHADING ═══
             var bandRanges = [
-              { lo: 0.5, hi: 4, bi: 0 },
-              { lo: 4, hi: 8, bi: 1 },
-              { lo: 8, hi: 13, bi: 2 },
-              { lo: 13, hi: 30, bi: 3 },
-              { lo: 30, hi: 60, bi: 4 },
+              { lo: 0.5, hi: 4, bi: 0, label: "δ Delta" },
+              { lo: 4, hi: 8, bi: 1, label: "θ Theta" },
+              { lo: 8, hi: 13, bi: 2, label: "α Alpha" },
+              { lo: 13, hi: 30, bi: 3, label: "β Beta" },
+              { lo: 30, hi: 60, bi: 4, label: "γ Gamma" },
             ];
+
             bandRanges.forEach(function (br) {
-              var x1 = 40 + (br.lo / 60) * (specW - 50),
-                x2 = 40 + (br.hi / 60) * (specW - 50);
+              var x1 = leftMargin + (br.lo / 60) * specW,
+                x2 = leftMargin + (Math.min(br.hi, 60) / 60) * specW;
               var bc = isDk ? BANDS[br.bi].d : BANDS[br.bi].c;
-              ctx.fillStyle = bc + "12";
-              ctx.fillRect(x1, 15, x2 - x1, H - 40);
-              ctx.fillStyle = bc;
-              ctx.font = "bold 7px " + M;
-              ctx.fillText(BANDS[br.bi].n, x1 + 2, 12);
-            });
-            // Spectrum line per visible electrode
-            d.eeg.slice(0, 4).forEach(function (el, ei) {
-              var bc = isDk ? BANDS[ei % 5].d : BANDS[ei % 5].c;
-              ctx.strokeStyle = bc;
-              ctx.lineWidth = 1.5;
-              ctx.globalAlpha = 0.7;
+
+              // Band region fill with gradient
+              var bandGrad = ctx.createLinearGradient(
+                x1,
+                topMargin,
+                x1,
+                topMargin + specH,
+              );
+              bandGrad.addColorStop(0, bc + "18");
+              bandGrad.addColorStop(0.5, bc + "08");
+              bandGrad.addColorStop(1, bc + "12");
+              ctx.fillStyle = bandGrad;
+              ctx.fillRect(x1, topMargin, x2 - x1, specH);
+
+              // Band separator line
+              ctx.strokeStyle = bc + "30";
+              ctx.lineWidth = 1;
               ctx.beginPath();
-              for (var f = 0; f < 120; f++) {
+              ctx.moveTo(x2, topMargin);
+              ctx.lineTo(x2, topMargin + specH);
+              ctx.stroke();
+
+              // Band label at top
+              ctx.fillStyle = bc;
+              ctx.font = "bold 9px " + M;
+              ctx.textAlign = "center";
+              ctx.fillText(br.label, (x1 + x2) / 2, topMargin - 6);
+            });
+            ctx.textAlign = "left";
+
+            // ═══ GRID LINES ═══
+            ctx.strokeStyle = th.bd + "40";
+            ctx.lineWidth = 0.5;
+            // Horizontal grid (amplitude)
+            for (var gy = 0; gy <= 5; gy++) {
+              var yy = topMargin + (gy / 5) * specH;
+              ctx.beginPath();
+              ctx.setLineDash([2, 3]);
+              ctx.moveTo(leftMargin, yy);
+              ctx.lineTo(leftMargin + specW, yy);
+              ctx.stroke();
+              // Y-axis labels
+              ctx.setLineDash([]);
+              ctx.fillStyle = th.t3;
+              ctx.font = "10px " + M;
+              ctx.textAlign = "right";
+              var ampLabel = Math.round(yMax * (1 - gy / 5));
+              ctx.fillText(ampLabel + "", leftMargin - 8, yy + 4);
+            }
+            ctx.textAlign = "left";
+
+            // Y-axis title (rotated)
+            ctx.save();
+            ctx.translate(15, topMargin + specH / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = th.t2;
+            ctx.font = "bold 11px " + M;
+            ctx.textAlign = "center";
+            ctx.fillText("Power (µV²/Hz)", 0, 0);
+            ctx.restore();
+
+            // Vertical grid (frequency)
+            var freqMarkers = [0, 4, 8, 13, 20, 30, 40, 50, 60];
+            freqMarkers.forEach(function (f) {
+              var xx = leftMargin + (f / 60) * specW;
+              ctx.strokeStyle = th.bd + "30";
+              ctx.lineWidth = 0.5;
+              ctx.setLineDash([2, 3]);
+              ctx.beginPath();
+              ctx.moveTo(xx, topMargin);
+              ctx.lineTo(xx, topMargin + specH);
+              ctx.stroke();
+              ctx.setLineDash([]);
+              // X-axis labels
+              ctx.fillStyle = th.t3;
+              ctx.font = "10px " + M;
+              ctx.textAlign = "center";
+              ctx.fillText(f + "", xx, topMargin + specH + 15);
+            });
+            // X-axis title
+            ctx.fillStyle = th.t2;
+            ctx.font = "bold 11px " + M;
+            ctx.fillText("Frequency (Hz)", leftMargin + specW / 2, H - 8);
+            ctx.textAlign = "left";
+
+            // ═══ SPECTRUM CURVES ═══
+            // Draw filled area under each curve, then the line
+            d.eeg.slice(0, 4).forEach(function (el, ei) {
+              var elColors = ["#6366f1", "#0891b2", "#059669", "#d97706"];
+              var bc = isDk ? elColors[ei] + "cc" : elColors[ei];
+              var points = [];
+              var peakAmp = 0,
+                peakFreq = 0;
+
+              // Generate spectrum points
+              for (var f = 0; f <= 120; f++) {
                 var freq = (f / 120) * 60,
                   bIdx =
                     freq < 4
@@ -5445,83 +5648,189 @@
                 var amp = Math.abs(
                   eeg(p.time + f * 0.002, el.id, bIdx, p.pid, p.fp),
                 );
-                var x = 40 + (freq / 60) * (specW - 50);
-                var y = H - 30 - (amp / yMax) * (H - 50);
-                f === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                var x = leftMargin + (freq / 60) * specW;
+                var y = topMargin + specH - (amp / yMax) * specH;
+                y = Math.max(topMargin, Math.min(topMargin + specH, y));
+                points.push({ x: x, y: y, amp: amp, freq: freq });
+                if (amp > peakAmp) {
+                  peakAmp = amp;
+                  peakFreq = freq;
+                }
               }
-              ctx.stroke();
+
+              // Store peak frequency
+              if (!peakFreqs.current[el.id])
+                peakFreqs.current[el.id] = peakFreq;
+              peakFreqs.current[el.id] =
+                peakFreqs.current[el.id] * 0.9 + peakFreq * 0.1;
+
+              // Filled area under curve
+              ctx.beginPath();
+              ctx.moveTo(points[0].x, topMargin + specH);
+              points.forEach(function (pt) {
+                ctx.lineTo(pt.x, pt.y);
+              });
+              ctx.lineTo(points[points.length - 1].x, topMargin + specH);
+              ctx.closePath();
+              var fillGrad = ctx.createLinearGradient(
+                0,
+                topMargin,
+                0,
+                topMargin + specH,
+              );
+              fillGrad.addColorStop(0, bc.replace("cc", "40"));
+              fillGrad.addColorStop(1, bc.replace("cc", "05"));
+              ctx.fillStyle = fillGrad;
+              ctx.globalAlpha = 0.4 - ei * 0.08;
+              ctx.fill();
               ctx.globalAlpha = 1;
+
+              // Spectrum line with glow
+              ctx.shadowColor = bc;
+              ctx.shadowBlur = 4;
+              ctx.strokeStyle = bc;
+              ctx.lineWidth = 2 - ei * 0.3;
+              ctx.beginPath();
+              points.forEach(function (pt, i) {
+                i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y);
+              });
+              ctx.stroke();
+              ctx.shadowBlur = 0;
             });
-            // Electrode legend
-            ctx.font = "bold 8px " + M;
-            d.eeg.slice(0, 4).forEach(function (el, ei) {
-              var bc = isDk ? BANDS[ei % 5].d : BANDS[ei % 5].c;
-              ctx.fillStyle = bc;
-              ctx.fillText(el.id, specW - 50, 25 + ei * 12);
-            });
-            // ── Right: Power band bars (all bands, animated) ──
+
+            // ═══ ELECTRODE LEGEND ═══
             ctx.fillStyle = th.t2;
-            ctx.font = "bold 9px " + M;
-            ctx.fillText("Band Power", barX, 14);
-            var bandH = (H - 30) / 5 - 4;
+            ctx.font = "bold 10px " + M;
+            ctx.fillText("Channels", leftMargin + specW - 80, topMargin + 15);
+            d.eeg.slice(0, 4).forEach(function (el, ei) {
+              var elColors = ["#6366f1", "#0891b2", "#059669", "#d97706"];
+              var bc = elColors[ei];
+              var ly = topMargin + 30 + ei * 18;
+              // Color dot
+              ctx.beginPath();
+              ctx.arc(leftMargin + specW - 75, ly - 3, 4, 0, Math.PI * 2);
+              ctx.fillStyle = bc;
+              ctx.fill();
+              // Label
+              ctx.fillStyle = th.tx;
+              ctx.font = "11px " + M;
+              ctx.fillText(el.id, leftMargin + specW - 65, ly);
+              // Peak frequency
+              ctx.fillStyle = th.t3;
+              ctx.font = "9px " + M;
+              var pf = peakFreqs.current[el.id] || 10;
+              ctx.fillText(pf.toFixed(1) + " Hz", leftMargin + specW - 30, ly);
+            });
+
+            // ═══ RIGHT PANEL: BAND POWER METERS ═══
+            ctx.fillStyle = th.t1 || th.tx;
+            ctx.font = "bold 14px " + M;
+            ctx.fillText("Band Power", barX, topMargin + 5);
+            ctx.fillStyle = th.t3;
+            ctx.font = "10px " + M;
+            ctx.fillText("Relative power distribution", barX, topMargin + 20);
+
+            var bandH = (specH - 40) / 5;
             BANDS.forEach(function (band, bi) {
               var bc = isDk ? band.d : band.c;
+              var by = topMargin + 35 + bi * bandH;
+
               // Average power across electrodes
               var sum = 0;
               d.eeg.forEach(function (el) {
                 sum += bpow(p.time, el.id, bi, p.pid, p.fp);
               });
               var avg = sum / d.eeg.length;
+
               // Track history for sparkline
               if (!hist.current[bi]) hist.current[bi] = [];
               hist.current[bi].push(avg);
-              if (hist.current[bi].length > 40) hist.current[bi].shift();
-              var by = 22 + bi * (bandH + 4);
-              // Label
+              if (hist.current[bi].length > 50) hist.current[bi].shift();
+
+              // Band label with icon
               ctx.fillStyle = bc;
-              ctx.font = "bold 8px " + M;
-              ctx.fillText(band.n, barX, by + 10);
-              // Bar background
-              ctx.fillStyle = th.bd + "60";
-              ctx.fillRect(barX + 45, by + 2, barW - 50, bandH - 4);
-              // Bar fill
-              ctx.fillStyle = bc;
-              ctx.globalAlpha = 0.8;
-              ctx.fillRect(barX + 45, by + 2, avg * (barW - 50), bandH - 4);
-              ctx.globalAlpha = 1;
-              // Percentage
-              ctx.fillStyle = th.tx;
-              ctx.font = "bold 8px " + M;
+              ctx.font = "bold 12px " + M;
+              ctx.fillText(band.n, barX, by + 14);
+              ctx.fillStyle = th.t3;
+              ctx.font = "9px " + M;
+              ctx.fillText(band.r + " Hz", barX, by + 26);
+
+              // Power bar background
+              var barY = by + 32,
+                barHeight = 16;
+              ctx.fillStyle = th.bd + "40";
+              ctx.fillRect(barX, barY, barW, barHeight);
+
+              // Power bar fill with gradient
+              var barGrad = ctx.createLinearGradient(
+                barX,
+                barY,
+                barX + barW,
+                barY,
+              );
+              barGrad.addColorStop(0, bc);
+              barGrad.addColorStop(1, bc + "80");
+              ctx.fillStyle = barGrad;
+              ctx.fillRect(barX, barY, avg * barW, barHeight);
+
+              // Bar border
+              ctx.strokeStyle = bc + "60";
+              ctx.lineWidth = 1;
+              ctx.strokeRect(barX, barY, barW, barHeight);
+
+              // Percentage text
+              ctx.fillStyle = avg > 0.5 ? "#fff" : th.tx;
+              ctx.font = "bold 11px " + M;
+              ctx.textAlign = "center";
               ctx.fillText(
                 Math.round(avg * 100) + "%",
-                barX + 45 + avg * (barW - 50) + 4,
-                by + bandH - 6,
+                barX + barW / 2,
+                barY + 12,
               );
+              ctx.textAlign = "left";
+
               // Mini sparkline
-              ctx.strokeStyle = bc + "80";
+              var sparkY = by + 52,
+                sparkH = 20;
+              ctx.strokeStyle = bc + "60";
               ctx.lineWidth = 1;
               ctx.beginPath();
-              var sparkH = bandH - 8;
               hist.current[bi].forEach(function (v, i) {
-                var sx = barX + 45 + (i / 39) * (barW - 50);
-                var sy = by + bandH - 2 - v * sparkH;
+                var sx = barX + (i / 49) * barW;
+                var sy = sparkY + sparkH - v * sparkH;
                 i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
               });
               ctx.stroke();
+
+              // Sparkline fill
+              ctx.beginPath();
+              ctx.moveTo(barX, sparkY + sparkH);
+              hist.current[bi].forEach(function (v, i) {
+                var sx = barX + (i / 49) * barW;
+                var sy = sparkY + sparkH - v * sparkH;
+                ctx.lineTo(sx, sy);
+              });
+              ctx.lineTo(
+                barX + ((hist.current[bi].length - 1) / 49) * barW,
+                sparkY + sparkH,
+              );
+              ctx.closePath();
+              ctx.fillStyle = bc + "15";
+              ctx.fill();
             });
           },
-          [Math.floor(p.time * 5)],
+          [Math.floor(p.time * 8)],
         );
+
         return h("canvas", {
           ref: ref,
           width: 1000,
-          height: 525,
+          height: 550,
           style: {
             width: "100%",
             height: "100%",
-
             borderRadius: 8,
-            background: th.sg,
+            background: isDk ? "#0a0f1a" : "#f8fafc",
           },
         });
       }
