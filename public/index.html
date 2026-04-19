@@ -3714,7 +3714,7 @@
         return h("canvas", {
           ref: ref,
           width: 1000,
-          height: 525,
+          height: 550,
           style: {
             width: "100%",
             height: "100%",
@@ -5238,9 +5238,9 @@
           b = BANDS[p.bi],
           isDk = th === TH.dark,
           col = isDk ? b.d : b.c;
-        // Calculate cell size to fit within 1000x525 display
+        // Calculate cell size to fit within 1000x525 display - doubled height
         var maxCells = els.length + 1; // +1 for row labels
-        var cellSize = Math.min(Math.floor(480 / maxCells), 60); // Max 60px per cell
+        var cellSize = Math.min(Math.floor(480 / maxCells), 100); // Max 100px per cell
         return h(
           "div",
           {
@@ -5260,12 +5260,12 @@
               {
                 key: el.id,
                 style: {
-                  fontSize: 10,
+                  fontSize: 14,
                   textAlign: "center",
                   color: th.t3,
                   fontWeight: 700,
                   fontFamily: M,
-                  height: 20,
+                  height: 30,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -5319,8 +5319,8 @@
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: 10,
-                      fontWeight: 600,
+                      fontSize: 16,
+                      fontWeight: 700,
                       color: coh > 0.6 ? th.tx : th.t3,
                       fontFamily: M,
                     },
@@ -8448,15 +8448,13 @@
                 {
                   style: {
                     flex: 1,
-                    overflow: "hidden",
+                    overflow: "auto",
                     padding: "6px",
                     background: th.bg,
                     display: displayMode === "dual" ? "flex" : "flex",
                     flexDirection: "column",
                     gap: displayMode === "dual" ? 12 : 0,
                     minHeight: 0,
-                    width: 1024,
-                    height: 600,
                   },
                 },
                 // DISPLAY MODE RENDERING
@@ -11271,18 +11269,11 @@
                           )
                         : perfPresets.map(function (preset, idx) {
                             var isActive = activePreset === preset.id;
-                            return h(
-                              "div",
-                              {
-                                key: preset.id,
-                                style: {
-                                  padding: 10,
-                                  borderRadius: 8,
-                                  background: isActive ? th.ac + "15" : th.sg,
-                                  border:
-                                    "2px solid " + (isActive ? th.ac : th.bd),
-                                  marginBottom: 6,
-                                },
+        return h(
+          "div",
+          {
+            style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, maxWidth: 700, margin: "0 auto" },
+          },
                               },
                               h(
                                 "div",
