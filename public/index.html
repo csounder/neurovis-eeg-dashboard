@@ -11269,11 +11269,18 @@
                           )
                         : perfPresets.map(function (preset, idx) {
                             var isActive = activePreset === preset.id;
-        return h(
-          "div",
-          {
-            style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, maxWidth: 700, margin: "0 auto" },
-          },
+                            return h(
+                              "div",
+                              {
+                                key: preset.id,
+                                style: {
+                                  padding: "10px 14px",
+                                  borderRadius: 8,
+                                  border:
+                                    "1px solid " + (isActive ? th.ac : th.bd),
+                                  background: isActive ? th.ac + "10" : th.sg,
+                                  marginBottom: 8,
+                                },
                               },
                               h(
                                 "div",
