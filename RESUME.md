@@ -22,9 +22,10 @@ Or shorter:
 
 ### Latest Commit
 
-**Hash:** `f9e6f60`
-**Message:** `feat: major UI redesign - remove sidebars, fix display sizing, improve canvas layouts`
+**Hash:** `b21ccc5`
+**Message:** `refactor: remove all orphaned legacy view blocks`
 **Date:** Today (April 19, 2026)
+**Previous:** `f9e6f60` (major UI redesign)
 
 ### Git Status
 
@@ -37,6 +38,33 @@ Or shorter:
 - **Browser-sync:** http://localhost:3001 (auto-reloads on index.html changes)
 - **Server:** http://localhost:3000 (Node.js server-enhanced.js running)
 - **Port 3000:** EEG API endpoints (/api/bands, /api/traces, /api/coherence, etc.)
+
+---
+
+## Code Cleanup
+
+### Orphaned Code Removal (Latest)
+
+**Commit:** `b21ccc5`
+
+Removed all 14 legacy `false &&` disabled view rendering blocks:
+
+- allbands, topo, traces, mentalstate, bands, waterfall, fullbrain
+- phase, coherence, neuro, fft, fnirs, ppg, imu
+
+**Impact:**
+
+- Removed 416 lines of dead code
+- File size: 12,700 → 12,579 lines
+- Single source of truth: `renderView()` function handles all 15 views
+- All views wrapped in `Card` component consistently
+- Legacy `renderPanel()` remains for quad view (13 views supported)
+
+**Verification:**
+
+- HTML structure valid (script, html, body tags balanced)
+- No syntax errors
+- All `false &&` blocks removed
 
 ---
 
