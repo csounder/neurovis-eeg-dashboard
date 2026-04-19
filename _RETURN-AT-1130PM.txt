@@ -1,0 +1,411 @@
+═══════════════════════════════════════════════════════════════════════════
+                    NEUROVIS - RETURN AT 11:00 AM GUIDE
+═══════════════════════════════════════════════════════════════════════════
+
+Last Updated: April 17, 2026 9:30 PM
+Status: All changes committed & pushed to GitHub
+Repository: https://github.com/csounder/neurovis-eeg-dashboard
+
+═══════════════════════════════════════════════════════════════════════════
+                              QUICK START
+═══════════════════════════════════════════════════════════════════════════
+
+WHEN YOU RETURN, JUST TELL ME:
+
+1. "Server still running?" → Run: ps aux | grep server-enhanced
+2. "Which path?" → Pick ONE:
+   - Mind Monitor diagnostic (RECOMMENDED - fastest)
+   - Unity app code review (Ganglion fix)
+   - MaxMSP Muse code review (historical reference)
+   - Direct DSP debug (manual approach)
+
+3. If Mind Monitor path:
+   - "Have the app?" (yes/no - $13 on App Store if not)
+   - "Laptop IP?" → Run: ifconfig | grep "inet " | grep -v 127.0.0.1
+
+THAT'S IT! I'll do the rest.
+
+═══════════════════════════════════════════════════════════════════════════
+                      SUGGESTED OPENING MESSAGE
+═══════════════════════════════════════════════════════════════════════════
+
+Just copy/paste this when you return:
+
+---
+Back! Lesson went [great/ok/etc]. 
+
+Server status: [paste result of: ps aux | grep server-enhanced]
+
+Want to start with: [Mind Monitor / Unity code / MaxMSP code / Direct debug]
+
+[If Mind Monitor] 
+  - Have app: [yes/no]
+  - Laptop IP: [paste result of: ifconfig | grep "inet " | grep -v 127.0.0.1]
+
+[If Unity/MaxMSP]
+  - Code location: [paste path]
+
+Ready!
+---
+
+═══════════════════════════════════════════════════════════════════════════
+                        RECOMMENDED PATH: MIND MONITOR
+═══════════════════════════════════════════════════════════════════════════
+
+WHY START HERE (30 minutes total):
+
+✓ Fastest way to diagnose Muse 2 frozen values issue
+✓ Proves whether bug is hardware vs our code
+✓ Gives us working reference implementation
+✓ CRITICAL TEST: Does alpha change when you close your eyes?
+  - If YES in Mind Monitor but NO in our app → our DSP buffer is broken
+  - If NO in Mind Monitor too → hardware issue (very unlikely)
+
+WHAT YOU NEED:
+
+1. Mind Monitor iPhone app ($13 App Store - check if you have it)
+2. iPhone + laptop on same WiFi network
+3. Laptop local IP address (run command above)
+4. Your Muse 2 headset (Muse-33C1)
+
+WHAT WE'LL DO:
+
+1. I write OSC packet logger script
+2. You run it in terminal
+3. You launch Mind Monitor on iPhone
+4. Connect to Muse 2
+5. Configure Mind Monitor → send OSC to laptop IP:7400
+6. EYES OPEN for 10 seconds (alpha should be LOW ~0.2-0.3)
+7. EYES CLOSED for 10 seconds (alpha should JUMP to ~0.6-0.8)
+8. EYES OPEN for 10 seconds (alpha should DROP again)
+9. Stop capture
+10. I analyze the packet log
+
+WHAT WE'LL LEARN:
+
+• Exact OSC message format Mind Monitor uses
+• Real refresh rate (they claim 10 Hz, we verify)
+• Value ranges (0-1, 0-3, raw µV?)
+• Per-channel vs averaged band powers
+• **MOST IMPORTANT: Do values actually change with eyes open/closed?**
+
+EXPECTED OUTCOME:
+
+→ If Mind Monitor works: We know our DSP buffer is broken, I'll find the fix
+→ If Mind Monitor fails: Switch to Ganglion (already 95% working)
+
+═══════════════════════════════════════════════════════════════════════════
+                      ALTERNATIVE PATHS (If Not Mind Monitor)
+═══════════════════════════════════════════════════════════════════════════
+
+OPTION B: UNITY APP CODE REVIEW (40 minutes)
+
+You successfully used Ganglion → Unity THIS AFTERNOON via Dr.C app.
+
+SHARE WITH ME:
+• Location of Unity app code
+• Just the BrainFlow integration parts
+
+I'LL EXTRACT:
+• Session management patterns
+• OSC output pipeline
+• Quirks/workarounds you discovered
+
+APPLY TO:
+• Fix Ganglion cleanup error in NeuroVis
+• Polish server integration
+• Add UI controls
+
+OUTCOME: Fully working Ganglion → Csound pipeline
+
+---
+
+OPTION C: MAXMSP MUSE CODE REVIEW (30 minutes)
+
+You have old MaxMSP code for Muse 1 / early Muse 2 that WORKED.
+
+SHARE WITH ME:
+• Location of MaxMSP patches
+• Which Muse model it worked with
+
+I'LL LOOK FOR:
+• How they parsed Muse data streams
+• LibMuse SDK usage patterns
+• Band power computation approach
+• Any quirks we're missing
+
+OUTCOME: Clues to fix our Muse integration
+
+---
+
+OPTION D: DIRECT DSP DEBUG (60-90 minutes)
+
+Skip diagnostics, go straight to fixing the bug.
+
+I'LL DO:
+1. Add logging to dsp.process() in server-enhanced.js
+2. Add logging to sampleWindows buffer
+3. Watch real-time as EEG arrives
+4. Trace where data flow breaks
+5. Fix the bug
+6. Test with your Muse 2
+
+YOU'LL DO:
+• Put on Muse 2 headset
+• Open/close eyes when I ask (to verify alpha changes)
+• Read server logs as I add instrumentation
+
+OUTCOME: Working Muse 2 hardware integration
+
+═══════════════════════════════════════════════════════════════════════════
+                            TERMINAL SETUP
+═══════════════════════════════════════════════════════════════════════════
+
+OPEN 3 TERMINAL WINDOWS:
+
+Terminal 1 - Server Logs (always running):
+  tail -f /tmp/muse_configurable.log
+
+Terminal 2 - Working Directory:
+  cd /Users/richardboulanger/dB-Studio/NeuroVis
+
+Terminal 3 - For Packet Logger (when we get there):
+  (I'll provide the code)
+
+═══════════════════════════════════════════════════════════════════════════
+                          QUICK HEALTH CHECK
+═══════════════════════════════════════════════════════════════════════════
+
+BEFORE WE START, RUN THESE:
+
+1. Server running?
+   ps aux | grep server-enhanced
+   → Should show: node server-enhanced.js (PID 54730 or similar)
+
+2. OSC enabled?
+   curl http://localhost:3000/api/settings | grep -i "osc\|simulator"
+   → Should show: "oscSending":true, "simulatorMode":true
+
+3. Browser working?
+   open http://localhost:3000
+   → Should open dashboard
+
+IF ANY FAIL:
+
+Restart server:
+  pkill -f "node.*server-enhanced.js"
+  cd /Users/richardboulanger/dB-Studio/NeuroVis
+  nohup node server-enhanced.js > /tmp/muse_configurable.log 2>&1 &
+
+Re-enable simulator + OSC:
+  curl -X POST http://localhost:3000/api/settings \
+    -H "Content-Type: application/json" \
+    -d '{"simulatorMode":true,"oscSending":true}'
+
+═══════════════════════════════════════════════════════════════════════════
+                          EXPECTED TIMELINE
+═══════════════════════════════════════════════════════════════════════════
+
+MIND MONITOR PATH (BEST CASE):
+  10 min - Setup and packet capture
+  10 min - Analyze packets
+  10 min - Identify bug location
+  20 min - Fix and test
+  ────────────────────────
+  50 min TOTAL → Working Muse 2
+
+DIRECT DEBUG PATH (WORST CASE):
+  30 min - Add DSP logging
+  30 min - Trace data flow
+  20 min - Fix and test
+  ────────────────────────
+  80 min TOTAL → Working Muse 2
+
+GANGLION PATH (ALTERNATIVE):
+  15 min - Fix cleanup error
+  10 min - Test standalone
+  15 min - Add UI controls
+  ────────────────────────
+  40 min TOTAL → Polished Ganglion
+
+═══════════════════════════════════════════════════════════════════════════
+                        WHAT'S ALREADY WORKING
+═══════════════════════════════════════════════════════════════════════════
+
+✅ Simulator → Csound (100% production ready)
+   - OSC streaming at 10 Hz to port 7400
+   - Values changing dynamically
+   - Scientific integrity enforced
+
+✅ Ganglion standalone test (100% working)
+   - File: ganglion-test.js
+   - Real EEG streaming: 4 channels @ 200 Hz
+   - Values changing: -776 to +2382 µV
+   - BLED dongle: /dev/cu.usbmodem11
+
+✅ Ganglion server integration (95% complete)
+   - startGanglion() and stopGanglion() functions exist
+   - Band power computation working
+   - OSC pipeline connected
+   - Just has cleanup error (Error code 15)
+
+⚠️  Muse 2/S hardware (95% complete)
+   - Connects successfully
+   - EEG packets flowing at 256 Hz
+   - Band power computation triggered
+   - VALUES FROZEN at α=0.230, β=0.136, θ=0.269
+   - Bug: DSP buffer has stale data
+
+═══════════════════════════════════════════════════════════════════════════
+                          KEY FILE LOCATIONS
+═══════════════════════════════════════════════════════════════════════════
+
+NEUROVIS PROJECT:
+  /Users/richardboulanger/dB-Studio/NeuroVis/
+
+  server-enhanced.js
+    Lines 1978-2191: Ganglion integration
+    Lines 497-538: Muse EEG handling (bug location)
+    Lines 191-295: Band power computation
+
+  ganglion-test.js (standalone test - WORKING!)
+
+  public/index.html (UI)
+
+  SESSION-LOG-2026-04-17.md (complete record - 2500+ lines)
+  RESUME-11-30PM.md (detailed return guide)
+  README-CSOUND-INTEGRATION.md (Csound docs)
+  ROADMAP.md (development plan)
+
+CSOUND TEST:
+  /Users/richardboulanger/Desktop/MuseOSCTest.csd
+
+LOGS:
+  /tmp/muse_configurable.log (server output - tail -f this!)
+
+HARDWARE:
+  Ganglion: BLED dongle at /dev/cu.usbmodem11
+  Muse 2: Muse-33C1 (connects but frozen values)
+  Muse S Athena: MuseS-FDE6 (same issue as Muse 2)
+
+═══════════════════════════════════════════════════════════════════════════
+                        GIT STATUS & BACKUP
+═══════════════════════════════════════════════════════════════════════════
+
+LATEST COMMIT: 53fbb75
+  "feat: add OpenBCI Ganglion support via BrainFlow + fix device display"
+
+REPOSITORY: https://github.com/csounder/neurovis-eeg-dashboard
+BRANCH: main
+STATUS: All changes committed and pushed ✅
+
+TO PULL LATEST (if needed):
+  cd /Users/richardboulanger/dB-Studio/NeuroVis
+  git pull origin main
+
+TO CHECK STATUS:
+  git status
+  git log --oneline -5
+
+═══════════════════════════════════════════════════════════════════════════
+                      USEFUL COMMANDS REFERENCE
+═══════════════════════════════════════════════════════════════════════════
+
+RESTART SERVER:
+  pkill -f "node.*server-enhanced.js"
+  cd /Users/richardboulanger/dB-Studio/NeuroVis
+  nohup node server-enhanced.js > /tmp/muse_configurable.log 2>&1 &
+  echo "Server PID: $!"
+
+ENABLE SIMULATOR MODE:
+  curl -X POST http://localhost:3000/api/settings \
+    -H "Content-Type: application/json" \
+    -d '{"simulatorMode":true,"oscSending":true}'
+
+START GANGLION (standalone test):
+  cd /Users/richardboulanger/dB-Studio/NeuroVis
+  node ganglion-test.js
+
+START GANGLION (via server):
+  curl -X POST http://localhost:3000/api/ganglion/start
+
+CHECK SERIAL PORTS:
+  ls -la /dev/cu.*
+
+VIEW LOGS:
+  tail -f /tmp/muse_configurable.log
+
+GET LAPTOP IP:
+  ifconfig | grep "inet " | grep -v 127.0.0.1
+
+CHECK WHAT'S USING PORT 7400:
+  lsof -i :7400
+
+═══════════════════════════════════════════════════════════════════════════
+                    OPTIONAL: LESSON FEEDBACK
+═══════════════════════════════════════════════════════════════════════════
+
+If you have time, share:
+
+• How did the lesson go?
+• Did Csound receive OSC successfully?
+• Any interesting questions from your student?
+• Creative mapping ideas she mentioned?
+• Features she'd want?
+• Did you notice anything during the demo?
+• Any parameters that worked particularly well?
+
+NOT REQUIRED - just helpful context if you have it!
+
+═══════════════════════════════════════════════════════════════════════════
+                         TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════
+
+IF SERVER WON'T START:
+  1. Check if old process is stuck: ps aux | grep server-enhanced
+  2. Kill it: pkill -9 -f "node.*server-enhanced"
+  3. Check port 3000 is free: lsof -i :3000
+  4. Restart: see "RESTART SERVER" above
+
+IF BROWSER WON'T CONNECT:
+  1. Check server is running: ps aux | grep server-enhanced
+  2. Check port 3000: lsof -i :3000
+  3. Try different browser or clear cache
+
+IF GANGLION WON'T CONNECT:
+  1. Check dongle is plugged in: ls /dev/cu.usbmodem11
+  2. Check Ganglion is powered on (blue light)
+  3. Close OpenBCI GUI if running (can't share connection)
+  4. Try standalone test first: node ganglion-test.js
+
+IF MUSE WON'T CONNECT:
+  1. Check MuseBridge is running: ps aux | grep MuseBridge
+  2. Check Muse is powered on (lights flashing)
+  3. Restart server (will restart MuseBridge automatically)
+
+IF OSC NOT SENDING:
+  1. Check settings: curl http://localhost:3000/api/settings
+  2. Should show: "oscSending":true
+  3. Re-enable: curl -X POST http://localhost:3000/api/settings \
+       -H "Content-Type: application/json" \
+       -d '{"oscSending":true}'
+
+═══════════════════════════════════════════════════════════════════════════
+                         BOTTOM LINE
+═══════════════════════════════════════════════════════════════════════════
+
+MINIMUM INFO TO START:
+
+1. Server status: ps aux | grep server-enhanced
+2. Chosen path: Mind Monitor / Unity code / MaxMSP code / Direct debug
+3. If Mind Monitor: Laptop IP
+
+THAT'S IT!
+
+Everything else is in:
+  /Users/richardboulanger/dB-Studio/NeuroVis/RESUME-11-30PM.md
+  /Users/richardboulanger/dB-Studio/NeuroVis/SESSION-LOG-2026-04-17.md
+
+All context preserved. All progress backed up. All code committed.
+
+══════

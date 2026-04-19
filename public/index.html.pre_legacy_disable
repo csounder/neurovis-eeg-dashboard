@@ -614,84 +614,43 @@
         // Only generate simulated data if simulator is enabled
         if (!_simulatorEnabled)
           return ch.indexOf("Acc") === 0 && ch[3] === "Z" ? 9.8 : 0;
-        // fNIRS: Realistic hemodynamic response simulation (3 active channels)
+        // fNIRS: Realistic hemodynamic response simulation
         if (ch === "HbO" || ch === "HbR" || ch === "HbT") {
+          // Three channels: HbO (oxygenated), HbR (deoxygenated), HbT (total)
+          // Slow oscillations mimicking brain hemodynamics (0.05-0.2 Hz)
           var baseline = 0.5;
-          var slow = 0.35 * Math.sin(t * 0.4); // visible slow wave
-          var med = 0.25 * Math.sin(t * 1.1 + ch.charCodeAt(2) * 1.7);
-          var fast = 0.15 * Math.sin(t * 2.3 + ch.charCodeAt(2) * 0.9);
-          var task = 0.2 * Math.sin(t * 0.18 + ch.charCodeAt(2) * 2.2);
-          var noise = (Math.random() - 0.5) * 0.04;
+          var slowWave = 0.15 * Math.sin(t * 0.1); // ~0.016 Hz
+          var taskResponse = 0.1 * Math.sin(t * 0.05 + ch.charCodeAt(2) * 3);
+          var noise = (Math.random() - 0.5) * 0.01;
 
           if (ch === "HbO") {
             // HbO (oxygenated) - increases during activation
-            return baseline + slow + med + fast + task + noise + 0.15;
+            return baseline + slowWave + taskResponse + noise + 0.1;
           } else if (ch === "HbR") {
-            // HbR (deoxygenated) - inverse pattern
-            return baseline - slow * 0.8 + med * 0.6 - task * 0.7 + noise - 0.1;
+            // HbR (deoxygenated) - decreases during activation (inverse)
+            return baseline + slowWave - taskResponse * 0.7 + noise - 0.05;
           } else {
-            // HbT (total)
-            return (
-              baseline +
-              slow * 0.5 +
-              med * 0.8 +
-              fast * 0.5 +
-              task * 0.4 +
-              noise +
-              0.05
-            );
+            // HbT (total) - sum of both
+            return baseline + slowWave + taskResponse * 0.5 + noise + 0.05;
           }
         }
-        if (ch.indexOf("PPG") === 0) {
-          // Physiologically realistic PPG waveform
-          // Models: heart rate, HRV, systolic peak, dicrotic notch, respiratory modulation
-          var baseHR = 56; // bpm baseline
-          var respRate = 0.25; // ~15 breaths/min (Hz)
-          // Slow HR drift (autonomic) ±4 bpm
-          var hrDrift = 4 * Math.sin(t * 0.05);
-          // Respiratory sinus arrhythmia (RSA): HR varies with breathing ±3 bpm
-          var rsa = 3 * Math.sin(t * 2 * Math.PI * respRate);
-          var instHR = baseHR + hrDrift + rsa;
-          var beatPeriod = 60 / instHR; // seconds per beat
-          var phase = (t % beatPeriod) / beatPeriod; // 0..1 within beat
-          // Channel offset for PPG1/PPG2/PPG3 (slight phase delay between sensors)
-          var chOffset = (parseInt(ch.slice(3)) || 1) - 1;
-          phase = (phase + chOffset * 0.04) % 1;
-          // Pulse waveform: sharp systolic peak + dicrotic notch + diastolic peak
-          // Systolic peak (Gaussian centered at 0.15 of beat)
-          var systolic = Math.exp(-Math.pow((phase - 0.15) / 0.07, 2));
-          // Dicrotic notch dip at 0.4
-          var notch = -0.15 * Math.exp(-Math.pow((phase - 0.4) / 0.04, 2));
-          // Diastolic peak (smaller, at 0.5)
-          var diastolic = 0.35 * Math.exp(-Math.pow((phase - 0.5) / 0.08, 2));
-          var ac = systolic + notch + diastolic;
-          // Respiratory amplitude modulation (PPG amplitude varies with breath)
-          var respMod = 1 + 0.15 * Math.sin(t * 2 * Math.PI * respRate);
-          ac *= respMod;
-          // DC baseline (bulk tissue absorption) + AC pulsatile component
-          var dc = 50;
-          var acAmp = 18; // typical PPG amplitude in arbitrary units
-          // Slight inter-channel amplitude variation
-          var chGain = 1 - chOffset * 0.08;
-          var noise = (Math.random() - 0.5) * 0.8;
-          return dc + ac * acAmp * chGain + noise;
-        }
-        if (ch.indexOf("Acc") === 0) {
-          var axisOffset = ch.charCodeAt(3); // X=88, Y=89, Z=90
-          var slow = 0.6 * Math.sin(t * 0.4 + axisOffset * 1.7);
-          var med = 0.4 * Math.sin(t * 1.3 + axisOffset * 2.3);
-          var fast = 0.2 * Math.sin(t * 3.1 + axisOffset * 0.9);
-          var jitter = (Math.random() - 0.5) * 0.15;
-          return (ch[3] === "Z" ? 9.8 : 0) + slow + med + fast + jitter;
-        }
-        if (ch.indexOf("Gyro") === 0) {
-          var axisOffset = ch.charCodeAt(4); // X=88, Y=89, Z=90
-          var slow = 8 * Math.sin(t * 0.3 + axisOffset * 1.1);
-          var med = 5 * Math.sin(t * 1.1 + axisOffset * 2.7);
-          var fast = 3 * Math.sin(t * 2.7 + axisOffset * 0.5);
-          var jitter = (Math.random() - 0.5) * 1.2;
-          return slow + med + fast + jitter;
-        }
+        if (ch.indexOf("PPG") === 0)
+          return (
+            72 +
+            8 * Math.sin(t * 0.05) +
+            3 * Math.sin(t * 1.2) +
+            Math.random() * 2
+          );
+        if (ch.indexOf("Acc") === 0)
+          return (
+            (ch[3] === "Z" ? 9.8 : 0) +
+            0.15 * Math.sin(t * 0.3 + ch.charCodeAt(3) * 5) +
+            Math.random() * 0.08
+          );
+        if (ch.indexOf("Gyro") === 0)
+          return (
+            2 * Math.sin(t * 0.2 + ch.charCodeAt(4) * 3) + Math.random() * 0.5
+          );
         return 0;
       }
 
@@ -710,7 +669,6 @@
               flexDirection: "column",
               flex: 1,
               minHeight: 0,
-              margin: 8,
             },
           },
           p.title &&
@@ -737,10 +695,8 @@
               style: {
                 padding: 8,
                 flex: 1,
-                overflow: "hidden",
+                overflow: "auto",
                 minHeight: 0,
-                display: "flex",
-                flexDirection: "column",
               },
             },
             p.children,
@@ -2711,8 +2667,7 @@
           height: ch,
           style: {
             width: "100%",
-            height: "100%",
-            minHeight: Math.max(200, els.length * 40),
+            height: Math.max(200, els.length * 40),
             borderRadius: 8,
             background: th.sg,
           },
@@ -2796,15 +2751,7 @@
         });
         return h(
           "svg",
-          {
-            viewBox: "0 0 420 400",
-            style: {
-              maxWidth: 500,
-              maxHeight: 480,
-              margin: "0 auto",
-              display: "block",
-            },
-          },
+          { viewBox: "0 0 420 400", style: { width: "100%", maxHeight: 340 } },
           h("defs", null, defs),
           // Head outline
           h("ellipse", {
@@ -3333,13 +3280,7 @@
         return h(
           "div",
           {
-            style: {
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 16,
-              maxWidth: 600,
-              margin: "0 auto",
-            },
+            style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 },
           },
           ratios.map(function (r) {
             var tot = 0;
@@ -3357,8 +3298,8 @@
               {
                 key: r.n,
                 style: {
-                  padding: 20,
-                  borderRadius: 10,
+                  padding: 12,
+                  borderRadius: 8,
                   background: th.sg,
                   border: "1px solid " + th.bd,
                   textAlign: "center",
@@ -3368,18 +3309,18 @@
                 "div",
                 {
                   style: {
-                    fontSize: 14,
-                    fontWeight: 700,
+                    fontSize: 9,
+                    fontWeight: 600,
                     color: th.t2,
                     textTransform: "uppercase",
-                    marginBottom: 4,
+                    marginBottom: 2,
                   },
                 },
                 r.n,
               ),
               h(
                 "div",
-                { style: { fontSize: 11, color: th.t3, marginBottom: 8 } },
+                { style: { fontSize: 7, color: th.t3, marginBottom: 4 } },
                 r.desc,
               ),
               h(
@@ -3387,35 +3328,32 @@
                 {
                   style: {
                     position: "relative",
-                    width: 120,
-                    height: 120,
+                    width: 70,
+                    height: 70,
                     margin: "0 auto",
                   },
                 },
                 h(
                   "svg",
-                  {
-                    viewBox: "0 0 120 120",
-                    style: { width: 120, height: 120 },
-                  },
+                  { viewBox: "0 0 70 70", style: { width: 70, height: 70 } },
                   h("circle", {
-                    cx: 60,
-                    cy: 60,
-                    r: 50,
+                    cx: 35,
+                    cy: 35,
+                    r: 28,
                     fill: "none",
                     stroke: th.bd,
-                    strokeWidth: 8,
+                    strokeWidth: 5,
                   }),
                   h("circle", {
-                    cx: 60,
-                    cy: 60,
-                    r: 50,
+                    cx: 35,
+                    cy: 35,
+                    r: 28,
                     fill: "none",
                     stroke: col,
-                    strokeWidth: 8,
-                    strokeDasharray: norm * 314 + " 314",
+                    strokeWidth: 5,
+                    strokeDasharray: norm * 176 + " 176",
                     strokeLinecap: "round",
-                    transform: "rotate(-90 60 60)",
+                    transform: "rotate(-90 35 35)",
                   }),
                 ),
                 h(
@@ -3427,13 +3365,13 @@
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: 24,
-                      fontWeight: 700,
+                      fontSize: 16,
+                      fontWeight: 600,
                       color: col,
                       fontFamily: M,
                     },
                   },
-                  Math.round(norm * 100) + "%",
+                  Math.round(norm * 100),
                 ),
               ),
             );
@@ -3713,14 +3651,16 @@
 
         return h("canvas", {
           ref: ref,
-          width: 1000,
-          height: 525,
+          width: 1600,
+          height: 800,
           style: {
-            width: "100%",
-            height: "100%",
+            width: "800px",
+            height: "400px",
+            maxWidth: "50%",
             background: isDk ? th.bg : "#fff",
             borderRadius: 5,
             display: "block",
+            margin: "0 auto",
           },
         });
       }
@@ -3962,19 +3902,24 @@
 
         return h("canvas", {
           ref: ref,
-          width: 1000,
-          height: 525,
+          width: 1200,
+          height: 600,
           style: {
-            width: "100%",
-            height: "100%",
-
+            width: "600px",
+            height: "300px",
+            maxWidth: "50%",
             background: isDk ? th.bg : "#fff",
             borderRadius: 5,
             display: "block",
+            margin: "0 auto",
           },
         });
       }
 
+      // ══════════════════════════════════════════════════════════════════
+      // ALL BANDS TIMELINE (Mind Monitor style)
+      // Shows all 5 band powers scrolling together with unique colors
+      // ══════════════════════════════════════════════════════════════════
       function AllBandsTimeline(p) {
         var th = p.t,
           d = DEVS[p.dev],
@@ -4166,14 +4111,15 @@
 
         return h("canvas", {
           ref: ref,
-          width: 1000,
-          height: 525,
+          width: 2400,
+          height: 800,
           style: {
             width: "100%",
-            height: "100%",
-
+            maxWidth: "50%",
+            height: "auto",
             borderRadius: 8,
             background: th.sg || "#f5f5f5",
+            margin: "0 auto",
             display: "block",
           },
         });
@@ -4530,15 +4476,16 @@
 
         return h("canvas", {
           ref: ref,
-          width: 1000,
-          height: 525,
+          width: 2400,
+          height: 1200,
           style: {
             width: "100%",
-            height: "100%",
-
+            maxWidth: "50%",
+            height: "auto",
             background: isDk ? th.bg : "#fff",
             borderRadius: 8,
             display: "block",
+            margin: "0 auto",
           },
         });
       }
@@ -4757,12 +4704,12 @@
 
         return h("canvas", {
           ref: ref,
-          width: 1000,
-          height: 525,
+          width: 1200,
+          height: 800,
           style: {
-            width: "100%",
-            height: "100%",
-
+            width: "600px",
+            height: "400px",
+            maxWidth: "50%",
             background: isDk ? th.bg : "#fff",
             borderRadius: 5,
             display: "block",
@@ -4903,12 +4850,11 @@
         );
         return h("canvas", {
           ref: ref,
-          width: 1000,
-          height: 525,
+          width: 1300,
+          height: 580,
           style: {
             width: "100%",
-            height: "100%",
-
+            height: 440,
             borderRadius: 8,
             background: th.sg,
           },
@@ -4938,24 +4884,10 @@
         }
         return h(
           "div",
-          {
-            style: {
-              display: "flex",
-              flexDirection: "column",
-              height: "100%",
-              minHeight: 0,
-            },
-          },
+          null,
           h(
             "div",
-            {
-              style: {
-                fontSize: 8,
-                color: th.t3,
-                marginBottom: 6,
-                flexShrink: 0,
-              },
-            },
+            { style: { fontSize: 8, color: th.t3, marginBottom: 6 } },
             d.name +
               " \u2014 showing " +
               b.n +
@@ -4969,11 +4901,7 @@
               style: {
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
-                gridTemplateRows: "1fr 1fr",
-                gap: 6,
-                maxWidth: 700,
-                maxHeight: 480,
-                margin: "0 auto",
+                gap: 8,
               },
             },
             ["top", "left", "right", "back"].map(function (v) {
@@ -5033,7 +4961,7 @@
                   "svg",
                   {
                     viewBox: "0 0 320 260",
-                    style: { width: "100%", maxHeight: 180 },
+                    style: { width: "100%", height: 200 },
                   },
                   h("defs", null, gradDefs),
                   h("ellipse", {
@@ -5217,14 +5145,15 @@
         );
         return h("canvas", {
           ref: ref,
-          width: 1000,
-          height: 525,
+          width: 600,
+          height: 600,
           style: {
-            width: "100%",
-            height: "100%",
-
+            width: "300px",
+            height: "300px",
+            maxWidth: "50%",
             borderRadius: 8,
             background: th.sg,
+            margin: "0 auto",
             display: "block",
           },
         });
@@ -5238,18 +5167,14 @@
           b = BANDS[p.bi],
           isDk = th === TH.dark,
           col = isDk ? b.d : b.c;
-        // Calculate cell size to fit within 1000x525 display
-        var maxCells = els.length + 1; // +1 for row labels
-        var cellSize = Math.min(Math.floor(480 / maxCells), 60); // Max 60px per cell
         return h(
           "div",
           {
             style: {
               display: "grid",
-              gridTemplateColumns:
-                "32px repeat(" + els.length + "," + cellSize + "px)",
-              gap: 3,
-              width: "fit-content",
+              gridTemplateColumns: "24px repeat(" + els.length + ",1fr)",
+              gap: 2,
+              maxWidth: "50%",
               margin: "0 auto",
             },
           },
@@ -5260,15 +5185,11 @@
               {
                 key: el.id,
                 style: {
-                  fontSize: 10,
+                  fontSize: 7,
                   textAlign: "center",
                   color: th.t3,
-                  fontWeight: 700,
+                  fontWeight: 600,
                   fontFamily: M,
-                  height: 20,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
                 },
               },
               el.id,
@@ -5306,8 +5227,8 @@
                   {
                     key: c.id,
                     style: {
-                      height: cellSize + "px",
-                      borderRadius: 4,
+                      aspectRatio: "1",
+                      borderRadius: 3,
                       background:
                         ri === ci
                           ? col + "30"
@@ -5319,8 +5240,7 @@
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: 10,
-                      fontWeight: 600,
+                      fontSize: 6,
                       color: coh > 0.6 ? th.tx : th.t3,
                       fontFamily: M,
                     },
@@ -5514,12 +5434,11 @@
         );
         return h("canvas", {
           ref: ref,
-          width: 1000,
-          height: 525,
+          width: 1100,
+          height: 350,
           style: {
             width: "100%",
-            height: "100%",
-
+            height: 300,
             borderRadius: 8,
             background: th.sg,
           },
@@ -5632,37 +5551,12 @@
         );
         var isPPG = p.kind === "ppg";
         if (isPPG) {
-          // Target BPM matches the simulator's model (baseline 56 + drift + RSA)
-          var targetBPM =
-            56 +
-            4 * Math.sin(p.time * 0.05) +
-            3 * Math.sin(p.time * 2 * Math.PI * 0.25);
-          hrSmooth.current = hrSmooth.current * 0.92 + targetBPM * 0.08;
+          hrSmooth.current =
+            hrSmooth.current * 0.95 + simAux(p.time, "PPG1") * 0.05;
         }
-        // Pulsing heart at the simulated BPM rate
-        var bpm = Math.max(30, Math.round(hrSmooth.current));
-        var beatPeriod = 60 / bpm; // seconds per beat
-        var phase = (p.time % beatPeriod) / beatPeriod; // 0..1
-        // Sharp pulse envelope: quick rise, slower decay
-        var pulse =
-          phase < 0.15
-            ? phase / 0.15
-            : phase < 0.4
-              ? 1 - (phase - 0.15) / 0.25
-              : 0;
-        var heartScale = 1 + pulse * 0.45;
-        var heartOpacity = 0.6 + pulse * 0.4;
         return h(
           "div",
-          {
-            style: {
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              flexDirection: "column",
-              minHeight: 0,
-            },
-          },
+          { style: { maxWidth: "50%", margin: "0 auto" } },
           isPPG &&
             h(
               "div",
@@ -5672,7 +5566,6 @@
                   alignItems: "center",
                   gap: 12,
                   marginBottom: 8,
-                  flexShrink: 0,
                 },
               },
               h(
@@ -5686,39 +5579,21 @@
                     lineHeight: 1,
                   },
                 },
-                bpm,
+                Math.round(hrSmooth.current),
               ),
               h(
                 "span",
                 { style: { fontSize: 9, color: th.t3, fontWeight: 700 } },
-                "BPM",
-              ),
-              h(
-                "span",
-                {
-                  style: {
-                    fontSize: 32,
-                    color: "#ef4444",
-                    display: "inline-block",
-                    transform: "scale(" + heartScale.toFixed(3) + ")",
-                    opacity: heartOpacity.toFixed(3),
-                    transition: "transform 60ms linear, opacity 60ms linear",
-                    transformOrigin: "center",
-                    lineHeight: 1,
-                  },
-                },
-                "\u2665",
+                "BPM \u2665",
               ),
             ),
           h("canvas", {
             ref: ref,
-            width: 1000,
-            height: 525,
+            width: 1200,
+            height: 400,
             style: {
               width: "100%",
-              height: "100%",
-              minHeight: 200,
-              flex: 1,
+              height: 200,
               borderRadius: 8,
               background: th.sg,
             },
@@ -6148,8 +6023,6 @@
         useEffect(
           function () {
             window._nv_signal = simMode || !!paired;
-            _simulatorEnabled = simMode;
-            console.log("[NeuroVis] Simulator:", simMode ? "ON" : "OFF");
           },
           [simMode, paired],
         );
@@ -8455,8 +8328,6 @@
                     flexDirection: "column",
                     gap: displayMode === "dual" ? 12 : 0,
                     minHeight: 0,
-                    width: 1024,
-                    height: 600,
                   },
                 },
                 // DISPLAY MODE RENDERING
@@ -8651,7 +8522,108 @@
                       setYAxisRanges: setYAxisRanges,
                     }),
                   ),
-
+                displayMode === "single" &&
+                  view === "allbands" &&
+                  h(
+                    Card,
+                    { t: th, title: "All Bands Timeline" },
+                    h(
+                      "div",
+                      {
+                        style: { fontSize: 8, color: th.t3, marginBottom: 6 },
+                      },
+                      "Mind Monitor style: All 5 brain wave bands (Delta, Theta, Alpha, Beta, Gamma) displayed simultaneously as scrolling timelines. Each band has a unique color. Values are averaged across all active channels. Use the BAND FILTERS above to show/hide specific bands.",
+                    ),
+                    h(AllBandsTimeline, {
+                      t: th,
+                      time: time,
+                      dev: dev,
+                      pid: pid,
+                      fp: fp,
+                      bandToggles: bandToggles,
+                    }),
+                  ),
+                displayMode === "single" &&
+                  view === "topo" &&
+                  h(
+                    Card,
+                    { t: th, title: "Topographic Map \u2014 " + BANDS[bi].n },
+                    h(
+                      "div",
+                      {
+                        style: { fontSize: 8, color: th.t3, marginBottom: 6 },
+                      },
+                      d.name +
+                        ": " +
+                        d.ch +
+                        " electrodes (" +
+                        d.eeg
+                          .map(function (e) {
+                            return e.id;
+                          })
+                          .join(", ") +
+                        ") mapped onto a head outline. Color intensity = " +
+                        BANDS[bi].n +
+                        " band power. Quality rings show electrode contact. Nose is at top.",
+                    ),
+                    h(TopoSVG, {
+                      t: th,
+                      time: time,
+                      dev: dev,
+                      bi: bi,
+                      skin: skin,
+                      pid: pid,
+                      fp: fp,
+                    }),
+                  ),
+                displayMode === "single" &&
+                  view === "traces" &&
+                  h(
+                    Card,
+                    { t: th, title: "EEG Traces" },
+                    h(
+                      "div",
+                      {
+                        style: { fontSize: 8, color: th.t3, marginBottom: 6 },
+                      },
+                      "Raw EEG waveforms for all channels. 4-second window showing microVolt fluctuations. Each channel rendered in a different color with auto-scaling or manual range control.",
+                    ),
+                    h(TracesView, {
+                      t: th,
+                      time: time,
+                      dev: dev,
+                      autoScale: autoScales.traces,
+                      yAxisRange: yAxisRanges.traces,
+                      deviceModel: deviceModel,
+                      inputFormat: inputFormat,
+                    }),
+                    h(ScaleControls, {
+                      t: th,
+                      viewId: "traces",
+                      autoScale: autoScales.traces,
+                      yAxisRange: yAxisRanges.traces,
+                      setAutoScales: setAutoScales,
+                      setYAxisRanges: setYAxisRanges,
+                    }),
+                  ),
+                displayMode === "single" &&
+                  view === "mentalstate" &&
+                  h(
+                    Card,
+                    { t: th, title: "Mental State" },
+                    h(
+                      "div",
+                      {
+                        style: { fontSize: 8, color: th.t3, marginBottom: 6 },
+                      },
+                      "Real-time mental state classification based on EEG band power ratios. Engagement index (Beta/Alpha+Theta), meditation score, and focus level. State automatically classified as Calm, Meditative, Focused, or Drowsy.",
+                    ),
+                    h(MentalStateView, {
+                      t: th,
+                      time: time,
+                      dev: dev,
+                    }),
+                  ),
                 displayMode === "single" &&
                   view === "filters" &&
                   h(
@@ -8904,13 +8876,312 @@
                     bandToggles: bandToggles,
                   }),
                 ),
-
+              displayMode === "single" &&
+                view === "bands" &&
+                h(
+                  Card,
+                  { t: th, title: "Band Powers" },
+                  h(
+                    "div",
+                    { style: { fontSize: 8, color: th.t3, marginBottom: 6 } },
+                    "Relative power in each EEG frequency band (delta, theta, alpha, beta, gamma) shown as horizontal bars. Values normalized to percentages per channel. Color-coded by band type.",
+                  ),
+                  h(BandPowersView, {
+                    t: th,
+                    time: time,
+                    dev: dev,
+                    bandToggles: bandToggles,
+                  }),
+                ),
+              displayMode === "single" &&
+                view === "waterfall" &&
+                h(
+                  Card,
+                  {
+                    t: th,
+                    title:
+                      "3D Waterfall \u2014 " + BANDS[bi].n + " (IBVA-style)",
+                  },
+                  h(
+                    "div",
+                    { style: { fontSize: 8, color: th.t3, marginBottom: 6 } },
+                    "Band power across all " +
+                      d.ch +
+                      " electrodes stacked in time (newer traces in front). Each line = one time snapshot. Height = amplitude. Inspired by the IBVA system\u2019s waterfall display for seeing temporal patterns in band power.",
+                  ),
+                  h(Waterfall, {
+                    t: th,
+                    time: time,
+                    dev: dev,
+                    bi: bi,
+                    pid: pid,
+                    fp: fp,
+                  }),
+                ),
+              displayMode === "single" &&
+                view === "fullbrain" &&
+                h(
+                  Card,
+                  {
+                    t: th,
+                    title: "Full Brain \u2014 " + BANDS[bi].n + " (EPOC-style)",
+                  },
+                  h(FullBrain, {
+                    t: th,
+                    time: time,
+                    dev: dev,
+                    bi: bi,
+                    skin: skin,
+                    pid: pid,
+                    fp: fp,
+                  }),
+                ),
+              displayMode === "single" &&
+                view === "phase" &&
+                h(
+                  Card,
+                  { t: th, title: "Phase - Selected Bands" },
+                  h(
+                    "div",
+                    { style: { fontSize: 8, color: th.t3, marginBottom: 6 } },
+                    "Polar plot showing phase angle and magnitude of selected band oscillations per electrode. Distance from center = power. Angle = instantaneous phase. When electrodes cluster together, the brain regions are synchronizing.",
+                  ),
+                  h(PhaseView, {
+                    t: th,
+                    time: time,
+                    dev: dev,
+                    bi: bi,
+                    pid: pid,
+                    fp: fp,
+                    bandToggles: bandToggles,
+                  }),
+                ),
+              displayMode === "single" &&
+                view === "coherence" &&
+                h(
+                  Card,
+                  { t: th, title: "Coherence Matrix" },
+                  h(
+                    "div",
+                    { style: { fontSize: 8, color: th.t3, marginBottom: 6 } },
+                    "Cross-electrode coherence: how synchronized oscillations are between each pair of electrodes. 100% = perfectly in phase. High coherence suggests functional connectivity between brain regions.",
+                  ),
+                  h(CoherenceView, {
+                    t: th,
+                    time: time,
+                    dev: dev,
+                    bi: bi,
+                    bandToggles: bandToggles,
+                  }),
+                ),
               displayMode === "single" &&
                 view === "connect" &&
                 h(
                   Card,
                   { t: th, title: "Sensor Connectivity \u2014 " + d.name },
                   h(ConnectView, { t: th, time: time, dev: dev }),
+                ),
+              displayMode === "single" &&
+                view === "neuro" &&
+                h(
+                  Card,
+                  { t: th, title: "Neuro Indices" },
+                  h(
+                    "div",
+                    { style: { fontSize: 8, color: th.t3, marginBottom: 6 } },
+                    "Computed ratios from band powers, averaged across electrodes. Focus = Beta/Theta (attention). Relax = Alpha/Beta (calm). Meditate = Theta/Alpha (deep states). Drowsy = Delta/Alpha (fatigue). Values are smoothed for stability.",
+                  ),
+                  h(
+                    "div",
+                    { style: { maxWidth: "50%", margin: "0 auto" } },
+                    h(NeuroView, {
+                      t: th,
+                      time: time,
+                      dev: dev,
+                      pid: pid,
+                      fp: fp,
+                    }),
+                  ),
+                ),
+              displayMode === "single" &&
+                view === "fft" &&
+                h(
+                  Card,
+                  { t: th, title: "FFT Spectrum + Power Bands" },
+                  h(
+                    "div",
+                    { style: { fontSize: 8, color: th.t3, marginBottom: 6 } },
+                    "Left: live frequency spectrum (0\u201360 Hz) with band regions color-coded. Right: all 5 band powers as animated bars with sparkline histories. Shows how spectral energy distributes across bands in real time.",
+                  ),
+                  h(FFTView, {
+                    t: th,
+                    time: time,
+                    dev: dev,
+                    pid: pid,
+                    fp: fp,
+                    autoScale: autoScales.fft,
+                    yAxisRange: yAxisRanges.fft,
+                  }),
+                  h(ScaleControls, {
+                    t: th,
+                    viewId: "fft",
+                    autoScale: autoScales.fft,
+                    yAxisRange: yAxisRanges.fft,
+                    setAutoScales: setAutoScales,
+                    setYAxisRanges: setYAxisRanges,
+                  }),
+                ),
+              displayMode === "single" &&
+                view === "fnirs" &&
+                h(
+                  Card,
+                  { t: th, title: "fNIRS \u2014 Hemodynamic Response" },
+                  h(
+                    "div",
+                    { style: { fontSize: 8, color: th.t3, marginBottom: 6 } },
+                    "Functional near-infrared spectroscopy measures blood oxygenation changes in the prefrontal cortex. Traces show oxygenated (HbO) and deoxygenated (HbR) hemoglobin concentration. Increases in HbO indicate increased neural activity in that region.",
+                  ),
+                  h(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        gap: 6,
+                        marginBottom: 8,
+                        justifyContent: "center",
+                      },
+                    },
+                    ["HbO", "HbR", "HbT"].map(function (ch) {
+                      var chColors = {
+                        HbO: "#ef4444",
+                        HbR: "#22c55e",
+                        HbT: "#3b82f6",
+                      };
+                      var chLabels = {
+                        HbO: "HbO (Oxy)",
+                        HbR: "HbR (Deoxy)",
+                        HbT: "HbT (Total)",
+                      };
+                      return h(
+                        "label",
+                        {
+                          key: ch,
+                          style: {
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            padding: "4px 8px",
+                            borderRadius: 5,
+                            border:
+                              "2px solid " +
+                              (fnirsToggles[ch] ? chColors[ch] : th.bd),
+                            background: fnirsToggles[ch]
+                              ? chColors[ch] + "20"
+                              : th.c2,
+                            cursor: "pointer",
+                            fontSize: 8,
+                            fontWeight: 600,
+                          },
+                        },
+                        h("input", {
+                          type: "checkbox",
+                          checked: fnirsToggles[ch],
+                          onChange: function () {
+                            var next = {};
+                            Object.keys(fnirsToggles).forEach(function (k) {
+                              next[k] = fnirsToggles[k];
+                            });
+                            next[ch] = !next[ch];
+                            setFnirsToggles(next);
+                          },
+                          style: { width: 12, height: 12 },
+                        }),
+                        h(
+                          "span",
+                          {
+                            style: {
+                              color: fnirsToggles[ch] ? chColors[ch] : th.t3,
+                            },
+                          },
+                          chLabels[ch],
+                        ),
+                      );
+                    }),
+                  ),
+                  h(AuxPanel, {
+                    t: th,
+                    time: time,
+                    dev: dev,
+                    kind: "fnirs",
+                    auxOn: auxOn,
+                    autoScale: autoScales.fnirs,
+                    yAxisRange: yAxisRanges.fnirs,
+                    fnirsToggles: fnirsToggles,
+                  }),
+                  h(ScaleControls, {
+                    t: th,
+                    viewId: "fnirs",
+                    autoScale: autoScales.fnirs,
+                    yAxisRange: yAxisRanges.fnirs,
+                    setAutoScales: setAutoScales,
+                    setYAxisRanges: setYAxisRanges,
+                  }),
+                ),
+              displayMode === "single" &&
+                view === "ppg" &&
+                h(
+                  Card,
+                  { t: th, title: "PPG / Heart Rate" },
+                  h(
+                    "div",
+                    { style: { fontSize: 8, color: th.t3, marginBottom: 6 } },
+                    "Photoplethysmography measures blood volume pulse via infrared light. The BPM readout is smoothed. The waveform shows the cardiac cycle. Heart rate variability (HRV) can be observed in the spacing between peaks.",
+                  ),
+                  h(AuxPanel, {
+                    t: th,
+                    time: time,
+                    dev: dev,
+                    kind: "ppg",
+                    auxOn: auxOn,
+                    autoScale: autoScales.ppg,
+                    yAxisRange: yAxisRanges.ppg,
+                  }),
+                  h(ScaleControls, {
+                    t: th,
+                    viewId: "ppg",
+                    autoScale: autoScales.ppg,
+                    yAxisRange: yAxisRanges.ppg,
+                    setAutoScales: setAutoScales,
+                    setYAxisRanges: setYAxisRanges,
+                  }),
+                ),
+              displayMode === "single" &&
+                view === "imu" &&
+                h(
+                  Card,
+                  { t: th, title: "IMU \u2014 Motion Sensors" },
+                  h(
+                    "div",
+                    { style: { fontSize: 8, color: th.t3, marginBottom: 6 } },
+                    "6-axis inertial measurement unit: accelerometer (AccX/Y/Z in g-force, Z\u22489.8 at rest) and gyroscope (GyroX/Y/Z in \u00B0/s). Useful for detecting head movement artifacts and meditation stillness.",
+                  ),
+                  h(AuxPanel, {
+                    t: th,
+                    time: time,
+                    dev: dev,
+                    kind: "imu",
+                    auxOn: auxOn,
+                    autoScale: autoScales.imu,
+                    yAxisRange: yAxisRanges.imu,
+                  }),
+                  h(ScaleControls, {
+                    t: th,
+                    viewId: "imu",
+                    autoScale: autoScales.imu,
+                    yAxisRange: yAxisRanges.imu,
+                    setAutoScales: setAutoScales,
+                    setYAxisRanges: setYAxisRanges,
+                  }),
                 ),
 
               displayMode === "single" &&
@@ -9029,6 +9300,7 @@
                       display: "grid",
                       gridTemplateColumns: "340px 1fr",
                       gap: 12,
+                      minHeight: 300,
                     },
                   },
                   // LEFT: Filter controls panel
