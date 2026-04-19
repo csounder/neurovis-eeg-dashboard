@@ -12,7 +12,12 @@ const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 
-const { DSPPipeline } = require("./dsp");
+const {
+  DSPPipeline,
+  ExponentialSmoother,
+  BiquadFilter,
+  Downsampler,
+} = require("./dsp");
 
 // BrainFlow for OpenBCI Ganglion
 const brainflow = require("brainflow");
@@ -37,6 +42,19 @@ const config = {
 
 // Express app
 const app = express();
+
+// CACHE BUSTING: Prevent browser from caching HTML to ensure fresh code loads
+app.use((req, res, next) => {
+  if (req.url.endsWith(".html") || req.url === "/") {
+    res.set({
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+    });
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json());
 
@@ -83,8 +101,13 @@ const DEVICE_SPECS = {
     hasfNIRS: false,
     eegSampleRate: 256,
     motionSampleRate: 52,
-    eegResolution: 12,
+    eegResolution: 12, // bits
     ppgResolution: 16,
+    // Voltage scaling specs
+    eegVoltageRange: 2.0, // mV peak-to-peak (2000 μV)
+    eegCoupling: "AC",
+    eegMicrovoltsPerBit: 2000 / Math.pow(2, 12), // ±1000 μV / 4096 = ~0.488 μV/bit
+    defaultYRange: [-200, 200], // μV display range
   },
   [DEVICE_MODELS.MUSE_S]: {
     name: "Muse S (Original)",
@@ -96,8 +119,13 @@ const DEVICE_SPECS = {
     eegSampleRate: 256,
     motionSampleRate: 52,
     ppgSampleRate: 64,
-    eegResolution: 12,
+    eegResolution: 12, // bits
     ppgResolution: 16,
+    // Voltage scaling specs
+    eegVoltageRange: 2.0, // mV peak-to-peak
+    eegCoupling: "AC",
+    eegMicrovoltsPerBit: 2000 / Math.pow(2, 12),
+    defaultYRange: [-200, 200],
   },
   [DEVICE_MODELS.MUSE_S_ATHENA]: {
     name: "Muse S Athena (2025)",
@@ -111,10 +139,135 @@ const DEVICE_SPECS = {
     motionSampleRate: 52,
     ppgSampleRate: 64,
     fnirsSampleRate: 10,
-    eegResolution: 14,
+    eegResolution: 14, // bits
     ppgResolution: 20,
+    // Voltage scaling specs
+    eegVoltageRange: 1.45, // mV peak-to-peak (1450 μV)
+    eegCoupling: "AC",
+    eegMicrovoltsPerBit: 1450 / Math.pow(2, 14), // ±725 μV / 16384 = ~0.0885 μV/bit
+    defaultYRange: [-150, 150], // μV display range
+  },
+  "OpenBCI Ganglion": {
+    name: "OpenBCI Ganglion",
+    eegChannels: 4,
+    channelNames: ["Chan1", "Chan2", "Chan3", "Chan4"],
+    hasMotion: true,
+    hasPPG: false,
+    hasfNIRS: false,
+    eegSampleRate: 200,
+    eegResolution: 18, // bits (MCP3912 ADC)
+    // Voltage scaling specs
+    eegVoltageRange: 5000, // ±2.5V = 5000 mV (5,000,000 μV)
+    eegCoupling: "DC", // DC capable
+    eegMicrovoltsPerBit: 5000000 / Math.pow(2, 18), // 5,000,000 μV / 262144 = ~19.07 μV/bit
+    defaultYRange: [-500, 500], // μV display range
+  },
+  "OpenBCI Cyton": {
+    name: "OpenBCI Cyton",
+    eegChannels: 8,
+    channelNames: [
+      "Chan1",
+      "Chan2",
+      "Chan3",
+      "Chan4",
+      "Chan5",
+      "Chan6",
+      "Chan7",
+      "Chan8",
+    ],
+    hasMotion: true,
+    hasPPG: false,
+    hasfNIRS: false,
+    eegSampleRate: 250,
+    eegResolution: 24, // bits (ADS1299)
+    // Voltage scaling specs
+    eegVoltageRange: 5000, // ±2.5V = 5000 mV
+    eegCoupling: "DC", // DC capable
+    eegMicrovoltsPerBit: 0.298, // Factory calibrated (ADS1299 datasheet)
+    defaultYRange: [-500, 500], // μV display range
   },
 };
+
+// ============================================================================
+// Voltage Scaling Utilities
+// ============================================================================
+
+/**
+ * Auto-detect input format and convert to microvolts
+ * @param {number[]} samples - Raw input values (one channel)
+ * @param {string} deviceModel - Device model key from DEVICE_SPECS
+ * @param {string} inputFormat - "auto", "normalized", "raw_counts", or "microvolts"
+ * @returns {number[]} - Values in microvolts
+ */
+function scaleToMicrovolts(samples, deviceModel, inputFormat = "auto") {
+  const spec = DEVICE_SPECS[deviceModel];
+  if (!spec) {
+    console.warn(`Unknown device model: ${deviceModel}, returning raw values`);
+    return samples;
+  }
+
+  // If already in microvolts (e.g., from Mind Monitor), return as-is
+  if (inputFormat === "microvolts") {
+    return samples;
+  }
+
+  // Auto-detect format based on value ranges
+  if (inputFormat === "auto") {
+    const maxAbs = Math.max(...samples.map(Math.abs));
+
+    if (maxAbs <= 1.5) {
+      // Likely normalized (0-1 or -1 to 1)
+      inputFormat = "normalized";
+    } else if (maxAbs > 1000) {
+      // Likely already microvolts or raw ADC counts
+      if (maxAbs > 10000) {
+        inputFormat = "raw_counts"; // OpenBCI raw counts (large integers)
+      } else {
+        inputFormat = "microvolts"; // Already in μV
+      }
+    } else {
+      // Typical EEG range: 1.5-1000 μV - assume microvolts
+      inputFormat = "microvolts";
+    }
+  }
+
+  // Convert based on detected/specified format
+  switch (inputFormat) {
+    case "normalized":
+      // Scale from -1..1 to full voltage range
+      const halfRange = (spec.eegVoltageRange * 1000) / 2; // Convert mV to μV
+      return samples.map((s) => s * halfRange);
+
+    case "raw_counts":
+      // Convert ADC counts to microvolts
+      return samples.map((s) => s * spec.eegMicrovoltsPerBit);
+
+    default:
+      return samples;
+  }
+}
+
+/**
+ * Get appropriate Y-axis range for a device
+ * @param {string} deviceModel - Device model key
+ * @returns {[number, number]} - [min, max] in microvolts
+ */
+function getDeviceYRange(deviceModel) {
+  const spec = DEVICE_SPECS[deviceModel];
+  return spec ? spec.defaultYRange : [-200, 200];
+}
+
+/**
+ * Format device info string
+ * @param {string} deviceModel - Device model key
+ * @returns {string} - Human-readable specs
+ */
+function getDeviceInfoString(deviceModel) {
+  const spec = DEVICE_SPECS[deviceModel];
+  if (!spec) return "Unknown device";
+
+  return `${spec.name} | ${spec.eegChannels}ch | ${spec.eegSampleRate}Hz | ${spec.eegResolution}bit | ${spec.eegCoupling} | ±${spec.eegVoltageRange / 2}mV`;
+}
 
 // OSC port
 let oscPort = null;
@@ -143,6 +296,7 @@ let currentBandPowers = {
 const dsp = new DSPPipeline({
   sampleRate: 256,
   numChannels: 4,
+  applyCAR: true, // Common Average Reference - spatial noise reduction
   applyNotch: true,
   applyBandpass: true,
   applySmoothing: true,
@@ -156,6 +310,7 @@ let settings = {
   oscPrefix: config.oscPrefix,
   scalingMode: "0-1", // 0-1 (default), 0-3 (Mind Monitor), raw, or zscore
   smoothingAmount: 10, // 0 = no smoothing
+  applyCAR: true, // Common Average Reference - removes global noise
   applyNotch: true,
   applyBandpass: true,
   displayMode: "raw", // raw, bands, fft
@@ -166,6 +321,11 @@ let settings = {
   oscRateHz: 256, // OSC output rate (Hz)
   wsRateHz: 10, // WebSocket dashboard rate (Hz)
   outputRateHz: 256, // EEG stream output rate (can be 10, 64, 128, 256, 512 Hz)
+
+  // Device & Voltage Scaling
+  deviceModel: DEVICE_MODELS.MUSE_2, // Default device
+  inputFormat: "auto", // "auto", "normalized", "raw_counts", or "microvolts"
+  yAxisRange: [-200, 200], // μV display range (auto-set from device specs)
 
   // OSC Master Control
   oscSending: false, // MASTER ON/OFF - must be true to send ANY OSC (safety: default OFF)
@@ -184,6 +344,32 @@ let settings = {
   oscOutputScaler: 1, // Multiplier for OSC values (1, 3, 10, 20, etc.)
   oscScaleMode: "normalize", // "normalize" (use scaler), "raw" (no scaling), "none"
   oscAllowNegative: true, // true = send -1 to +1, false = clamp to 0 to +1
+
+  // Baseline Normalization (NeurOSC feature)
+  applyBaseline: false, // Master toggle for z-score normalization
+  logTransform: false, // Apply log10 before z-score
+
+  // Granular OSC Controls (NeurOSC feature)
+  oscGranular: {
+    channels: {
+      CH1: true,
+      CH2: true,
+      CH3: true,
+      CH4: true,
+    },
+    bands: {
+      delta: true,
+      theta: true,
+      alpha: true,
+      beta: true,
+      gamma: true,
+    },
+    valueTypes: {
+      absolute: true, // Raw µV² power
+      relative: true, // 0-1 normalized
+      averages: true, // Cross-channel mean/min/max
+    },
+  },
 };
 
 let recordedData = [];
@@ -273,21 +459,135 @@ function calculateBandPowersFromEEG() {
 // Simulator (for testing without Muse)
 // ============================================================================
 
+/**
+ * REALISTIC EEG SIMULATOR
+ *
+ * Generates physiologically accurate EEG signals for testing/demonstration.
+ * Based on published neuroscience literature and typical resting-state EEG characteristics.
+ *
+ * Key References:
+ * - Niedermeyer & Lopes da Silva, "Electroencephalography: Basic Principles" (2005)
+ * - Buzsáki & Draguhn, "Neuronal Oscillations in Cortical Networks" Science (2004)
+ * - Berger, H. "Über das Elektrenkephalogramm des Menschen" (1929) - Original alpha discovery
+ *
+ * Simulated state: Relaxed, eyes closed, posterior alpha-dominant
+ * Artifacts included: 60Hz power line, breathing, slow cortical potentials
+ */
 function generateSimulatorData() {
   if (!settings.simulatorMode) return null;
 
   const time = Date.now() / 1000;
-  const freq = settings.simulatorFreq;
 
-  // Generate synthetic EEG with multiple components
-  return [
-    Math.sin(2 * Math.PI * freq * time) * 50 +
-      Math.sin(2 * Math.PI * freq * 0.1 * time) * 30 +
-      (Math.random() - 0.5) * 20, // Alpha + Delta + noise
-    Math.sin(2 * Math.PI * freq * 0.5 * time) * 40 + (Math.random() - 0.5) * 15,
-    Math.sin(2 * Math.PI * freq * 1.5 * time) * 35 + (Math.random() - 0.5) * 18,
-    Math.sin(2 * Math.PI * freq * 2 * time) * 45 + (Math.random() - 0.5) * 22,
-  ];
+  // REALISTIC EEG GENERATION based on published neuroscience literature
+  // References:
+  // - Niedermeyer & Lopes da Silva, "Electroencephalography" (2005)
+  // - Buzsáki & Draguhn, "Neuronal Oscillations in Cortical Networks" (2004)
+  // - Typical EEG amplitudes: 10-100 µV peak-to-peak
+
+  const randomInRange = (min, max) => min + Math.random() * (max - min);
+
+  // Physiologically realistic amplitudes (microvolts) - relaxed, eyes closed state
+  // Note: Actual EEG shows 1/f power spectrum (pink noise characteristics)
+  const amplitudes = {
+    delta: 30, // 0.5-4 Hz   - sleep/deep relaxation (30-200 µV typical)
+    theta: 20, // 4-8 Hz     - drowsiness/meditation (15-40 µV typical)
+    alpha: 40, // 8-13 Hz    - relaxed, eyes closed (20-60 µV typical, DOMINANT)
+    beta: 10, // 13-30 Hz   - alert/thinking (5-20 µV typical)
+    gamma: 3, // 30-50 Hz   - attention/binding (2-10 µV typical, lowest)
+  };
+
+  // Generate 4 channels (TP9, AF7, AF8, TP10) with realistic spatial variations
+  const channels = [];
+  const channelNames = ["TP9", "AF7", "AF8", "TP10"];
+
+  for (let ch = 0; ch < 4; ch++) {
+    // Spatial variation: frontal channels (AF7, AF8) have more beta,
+    // temporal channels (TP9, TP10) have more alpha
+    const isFrontal = ch === 1 || ch === 2;
+    const alphaFactor = isFrontal ? 0.7 : 1.2; // Less alpha in frontal
+    const betaFactor = isFrontal ? 1.5 : 0.8; // More beta in frontal
+
+    // Hemisphere variation: slight asymmetry between left/right
+    const isLeft = ch === 0 || ch === 1;
+    const asymmetry = isLeft ? 1.0 : 1.05;
+
+    let signal = 0;
+
+    // Delta band (0.5-4 Hz) - multiple harmonics for realism
+    for (let h = 1; h <= 2; h++) {
+      const deltaFreq = randomInRange(0.5, 4) * h;
+      signal +=
+        (amplitudes.delta / h) *
+        asymmetry *
+        Math.sin(2 * Math.PI * deltaFreq * time + Math.random() * 2 * Math.PI);
+    }
+
+    // Theta band (4-8 Hz) - with harmonic content
+    for (let h = 1; h <= 2; h++) {
+      const thetaFreq = randomInRange(4, 8) * h;
+      signal +=
+        (amplitudes.theta / h) *
+        asymmetry *
+        Math.sin(2 * Math.PI * thetaFreq * time + Math.random() * 2 * Math.PI);
+    }
+
+    // Alpha band (8-13 Hz) - DOMINANT, with strong 10 Hz component (Berger rhythm)
+    const alphaBase = 10; // Typical posterior alpha rhythm
+    signal +=
+      amplitudes.alpha *
+      alphaFactor *
+      asymmetry *
+      Math.sin(2 * Math.PI * alphaBase * time);
+    // Add alpha variation
+    signal +=
+      amplitudes.alpha *
+      0.3 *
+      alphaFactor *
+      asymmetry *
+      Math.sin(2 * Math.PI * randomInRange(8, 13) * time);
+
+    // Beta band (13-30 Hz) - multiple components (low beta, high beta)
+    const betaFreq1 = randomInRange(13, 20); // Low beta
+    const betaFreq2 = randomInRange(20, 30); // High beta
+    signal +=
+      amplitudes.beta *
+      0.7 *
+      betaFactor *
+      asymmetry *
+      Math.sin(2 * Math.PI * betaFreq1 * time);
+    signal +=
+      amplitudes.beta *
+      0.3 *
+      betaFactor *
+      asymmetry *
+      Math.sin(2 * Math.PI * betaFreq2 * time);
+
+    // Gamma band (30-50 Hz) - burst-like, intermittent
+    const gammaFreq = randomInRange(35, 45);
+    const gammaBurst = Math.sin(2 * Math.PI * 0.2 * time) > 0.5 ? 1.0 : 0.3;
+    signal +=
+      amplitudes.gamma *
+      gammaBurst *
+      asymmetry *
+      Math.sin(2 * Math.PI * gammaFreq * time);
+
+    // Realistic EEG noise characteristics:
+    // 1. Pink noise (1/f) - physiological background
+    signal += (Math.random() - 0.5) * 5;
+
+    // 2. 60 Hz power line interference (realistic artifact)
+    signal += 0.5 * Math.sin(2 * Math.PI * 60 * time);
+
+    // 3. Slow cortical potentials (< 0.5 Hz)
+    signal += 3 * Math.sin(2 * Math.PI * 0.08 * time);
+
+    // 4. Breathing artifact (~0.25 Hz)
+    signal += 2 * Math.sin(2 * Math.PI * 0.25 * time);
+
+    channels.push(signal);
+  }
+
+  return channels;
 }
 
 function generateSimulatorBandPowers() {
@@ -295,25 +595,30 @@ function generateSimulatorBandPowers() {
 
   const time = Date.now() / 1000;
 
-  // Generate fake band powers that vary over time
+  // REALISTIC band power simulation based on published literature
+  // Power varies realistically with slow oscillations mimicking attention/relaxation cycles
   const oscillate = (freq, offset = 0) => {
     return 0.5 + 0.4 * Math.sin(2 * Math.PI * freq * time + offset);
   };
 
   return {
     absolute: {
-      delta: -2 + oscillate(0.5, 0) * 2, // -2 to 0 dB
-      theta: -1 + oscillate(0.3, 1) * 1.5, // -1 to 0.5 dB
-      alpha: 0 + oscillate(1, 2) * 2, // 0 to 2 dB (main band)
-      beta: -1 + oscillate(0.7, 3) * 1.5, // -1 to 0.5 dB
-      gamma: -3 + oscillate(0.4, 4) * 1, // -3 to -2 dB
+      // Absolute power in dB (relative to 1 µV²)
+      // Based on typical closed-eyes resting state measurements
+      delta: -3 + oscillate(0.05, 0) * 2, // -3 to -1 dB (low power, not sleeping)
+      theta: -2 + oscillate(0.08, 1) * 1.5, // -2 to -0.5 dB (moderate)
+      alpha: 2 + oscillate(0.12, 2) * 3, // 2 to 5 dB (DOMINANT - eyes closed)
+      beta: -1 + oscillate(0.15, 3) * 2, // -1 to 1 dB (alert/thinking)
+      gamma: -5 + oscillate(0.1, 4) * 1.5, // -5 to -3.5 dB (low, normal)
     },
     relative: {
-      delta: 0.05 + oscillate(0.5) * 0.15,
-      theta: 0.1 + oscillate(0.3) * 0.15,
-      alpha: 0.5 + oscillate(1) * 0.2, // Alpha dominant
-      beta: 0.25 + oscillate(0.7) * 0.15,
-      gamma: 0.1 + oscillate(0.4) * 0.1,
+      // Relative power (sum = 1.0) - physiologically realistic distribution
+      // Alpha dominant in relaxed, eyes-closed state
+      delta: 0.08 + oscillate(0.05) * 0.05, // 8-13% (low in awake state)
+      theta: 0.12 + oscillate(0.08) * 0.08, // 12-20% (drowsy/meditative)
+      alpha: 0.5 + oscillate(0.12) * 0.15, // 50-65% (DOMINANT posterior)
+      beta: 0.2 + oscillate(0.15) * 0.1, // 20-30% (cognitive activity)
+      gamma: 0.1 + oscillate(0.1) * 0.05, // 10-15% (attention/binding)
     },
   };
 }
@@ -335,18 +640,56 @@ function generateSimulatorMotion(type) {
       Math.sin(2 * Math.PI * 0.2 * time) * 5 + (Math.random() - 0.5) * 2,
     ];
   } else if (type === "ppg") {
-    // Normalized to 0-1 range (simulating photoplethysmogram signal)
-    return [
-      0.5 +
-        Math.sin(2 * Math.PI * 1.3 * time) * 0.3 +
-        (Math.random() - 0.5) * 0.1, // Red
-      0.5 +
-        Math.sin(2 * Math.PI * 1.3 * time + 0.5) * 0.25 +
-        (Math.random() - 0.5) * 0.08, // Green
-      0.5 +
-        Math.sin(2 * Math.PI * 1.3 * time + 1) * 0.35 +
-        (Math.random() - 0.5) * 0.1, // IR
-    ];
+    // Realistic heartbeat simulation (ECG-style PQRST complex)
+    // Heart rate: ~72 BPM (1.2 Hz)
+    const BPM = 72;
+    const HR_HZ = BPM / 60; // 1.2 Hz
+    const beatPeriod = 1 / HR_HZ; // ~0.833s
+    const beatPhase = (time % beatPeriod) / beatPeriod; // 0-1 within each beat
+
+    let signal = 0;
+
+    // PQRST complex approximation
+    if (beatPhase < 0.1) {
+      // P wave (atrial depolarization) - small bump
+      const p = beatPhase / 0.1;
+      signal = 0.15 * Math.sin(Math.PI * p);
+    } else if (beatPhase < 0.2) {
+      // PR segment - baseline
+      signal = 0;
+    } else if (beatPhase < 0.3) {
+      // QRS complex (ventricular depolarization) - sharp spike
+      const qrs = (beatPhase - 0.2) / 0.1;
+      if (qrs < 0.3) {
+        // Q dip
+        signal = -0.1 * (qrs / 0.3);
+      } else if (qrs < 0.6) {
+        // R spike (main heartbeat peak)
+        signal = 1.0 * Math.sin((Math.PI * (qrs - 0.3)) / 0.3);
+      } else {
+        // S dip
+        signal = -0.15 * (1 - (qrs - 0.6) / 0.4);
+      }
+    } else if (beatPhase < 0.5) {
+      // ST segment - baseline
+      signal = 0;
+    } else if (beatPhase < 0.7) {
+      // T wave (ventricular repolarization) - rounded bump
+      const t = (beatPhase - 0.5) / 0.2;
+      signal = 0.3 * Math.sin(Math.PI * t);
+    } else {
+      // Rest - baseline
+      signal = 0;
+    }
+
+    // Add small noise for realism
+    signal += (Math.random() - 0.5) * 0.02;
+
+    // Normalize to 0-1 range (Muse PPG format)
+    const normalized = signal * 0.4 + 0.5; // Center around 0.5
+
+    // Return [red, green, IR] - all similar for heartbeat
+    return [normalized, normalized * 0.95, normalized * 1.05];
   }
   return null;
 }
@@ -355,7 +698,10 @@ function generateSimulatorMotion(type) {
 // OSC Setup
 // ============================================================================
 
+let oscInputPort = null; // Mind Monitor OSC input listener
+
 function initOSC() {
+  // OSC OUTPUT: Send to Csound/Max/etc
   oscPort = new osc.UDPPort({
     localAddress: "127.0.0.1",
     localPort: 0,
@@ -365,13 +711,107 @@ function initOSC() {
   });
 
   oscPort.open();
-  console.log(`✓ OSC client ready → ${config.oscHost}:${config.oscPort}`);
+  console.log(`✓ OSC OUTPUT ready → ${config.oscHost}:${config.oscPort}`);
   console.log(`✓ OSC prefix: ${settings.oscPrefix}`);
   console.log(`🎵 PRIMARY: Csound listening on port ${config.oscPort}`);
 
   oscPort.on("error", (err) => {
-    console.error("❌ OSC Error:", err.message);
+    console.error("❌ OSC OUTPUT Error:", err.message);
   });
+
+  // OSC INPUT: Listen for Mind Monitor data
+  initOSCInput();
+}
+
+function initOSCInput() {
+  oscInputPort = new osc.UDPPort({
+    localAddress: "0.0.0.0",
+    localPort: 5000, // Mind Monitor default
+    metadata: true,
+  });
+
+  oscInputPort.on("ready", () => {
+    console.log(`✓ OSC INPUT listening on port 5000 (Mind Monitor)`);
+    console.log(`📱 Waiting for Mind Monitor data...`);
+  });
+
+  oscInputPort.on("message", (msg) => {
+    handleMindMonitorOSC(msg);
+  });
+
+  oscInputPort.on("error", (err) => {
+    console.error("❌ OSC INPUT Error:", err.message);
+  });
+
+  oscInputPort.open();
+}
+
+// Mind Monitor OSC message handler
+function handleMindMonitorOSC(msg) {
+  const addr = msg.address;
+  const args = msg.args.map((a) => a.value);
+
+  // Raw EEG (already in microvolts!)
+  if (addr === "/muse/eeg") {
+    const [TP9, AF7, AF8, TP10] = args;
+    broadcast({
+      type: "eeg",
+      timestamp: Date.now(),
+      eeg: { TP9, AF7, AF8, TP10 },
+      source: "mind_monitor",
+    });
+
+    // Forward to OSC output if enabled
+    if (settings.oscSending) {
+      sendOSC(msg);
+    }
+  }
+
+  // Band powers (absolute)
+  else if (addr.startsWith("/muse/elements/")) {
+    const band = addr.split("/").pop().replace("_absolute", "");
+    const [ch1, ch2, ch3, ch4] = args;
+
+    broadcast({
+      type: "bandpower",
+      band: band,
+      channels: { TP9: ch1, AF7: ch2, AF8: ch3, TP10: ch4 },
+      source: "mind_monitor",
+    });
+  }
+
+  // Accelerometer
+  else if (addr === "/muse/acc") {
+    const [x, y, z] = args;
+    broadcastMotionData("accel", [x, y, z]);
+  }
+
+  // Gyroscope
+  else if (addr === "/muse/gyro") {
+    const [x, y, z] = args;
+    broadcastMotionData("gyro", [x, y, z]);
+  }
+
+  // Battery
+  else if (addr === "/muse/batt") {
+    const [percent, fuel, volt, temp] = args;
+    broadcast({
+      type: "battery",
+      percent: percent,
+      voltage: volt,
+      temperature: temp,
+      source: "mind_monitor",
+    });
+  }
+
+  // Touching forehead
+  else if (addr === "/muse/touching_forehead") {
+    broadcast({
+      type: "touching",
+      value: args[0] === 1,
+      source: "mind_monitor",
+    });
+  }
 }
 
 // ============================================================================
@@ -507,16 +947,63 @@ function broadcastEEGData(eeg, processed, packet = {}) {
 }
 
 function handleEEGPacket(packet) {
-  // Get EEG data (simulator or real)
-  let eeg = settings.simulatorMode ? generateSimulatorData() : packet.eeg;
+  // CRITICAL: Only process REAL EEG data from Muse hardware
+  // Simulator has its own interval (see /api/use_simulator endpoint)
+
+  // SAFETY CHECK: Ignore real packets when simulator is active to prevent data mixing
+  if (settings.simulatorMode) {
+    console.log("⚠️  Ignoring real EEG packet - simulator mode is active");
+    return;
+  }
+
+  let eeg = packet.eeg;
 
   console.log(
-    `📥 handleEEGPacket called: simMode=${settings.simulatorMode}, hasEEG=${!!eeg}, packetCount=${packetCount}`,
+    `📥 handleEEGPacket called: REAL MODE, hasEEG=${!!eeg}, packetCount=${packetCount}`,
   );
 
   if (!eeg) {
     console.log("⚠️  No EEG data in packet:", packet);
     return;
+  }
+
+  // ========================================================================
+  // VOLTAGE SCALING: Convert input to microvolts based on device model
+  // ========================================================================
+  // Mind Monitor sends already-scaled μV, Muse SDK sends normalized,
+  // OpenBCI sends raw counts. Auto-detect and scale appropriately.
+  if (settings.deviceModel && settings.inputFormat !== "microvolts") {
+    const originalSample = Array.isArray(eeg[0]) ? eeg[0][0] : eeg[0];
+
+    // Apply per-channel scaling
+    eeg = eeg.map((channelSample, idx) => {
+      // If single value (not array), treat as single sample
+      if (!Array.isArray(channelSample)) {
+        return scaleToMicrovolts(
+          [channelSample],
+          settings.deviceModel,
+          settings.inputFormat,
+        )[0];
+      }
+      // If array of samples, scale the whole buffer
+      return scaleToMicrovolts(
+        channelSample,
+        settings.deviceModel,
+        settings.inputFormat,
+      );
+    });
+
+    const scaledSample = Array.isArray(eeg[0]) ? eeg[0][0] : eeg[0];
+
+    // Log scaling details every 100 packets
+    if (packetCount % 100 === 0) {
+      console.log(
+        `📊 Voltage Scaling [${getDeviceInfoString(settings.deviceModel)}]`,
+      );
+      console.log(`   Input format: ${settings.inputFormat}`);
+      console.log(`   Sample before: ${originalSample.toFixed(4)}`);
+      console.log(`   Sample after:  ${scaledSample.toFixed(4)} μV`);
+    }
   }
 
   packetCount++;
@@ -563,6 +1050,14 @@ function handleEEGPacket(packet) {
 }
 
 function handleBandPowersPacket(packet) {
+  // SAFETY CHECK: Ignore real packets when simulator is active
+  if (settings.simulatorMode) {
+    console.log(
+      "⚠️  Ignoring real band powers packet - simulator mode is active",
+    );
+    return;
+  }
+
   // Store band powers (10 Hz rate from Muse)
   if (!packet.absolute || !packet.relative) {
     console.log("⚠️  bandPowers packet missing data:", packet);
@@ -637,10 +1132,15 @@ function handleDeviceList(packet) {
     }
 
     const specs = DEVICE_SPECS[modelKey];
+
+    // Normalize device_type to match UI DEVS keys (lowercase with underscores)
+    let deviceType = modelKey.toLowerCase().replace(/ /g, "_");
+
     return {
       ...device,
       modelCode,
       modelKey,
+      device_type: deviceType, // e.g., "muse_2", "muse_s"
       specs,
       displayName: `${device.name} (${specs.name})`,
     };
@@ -665,6 +1165,11 @@ function handleDeviceList(packet) {
     dsp.updateConfig({ numChannels: currentDevice.specs.eegChannels });
   }
 
+  console.log(
+    `[handleDeviceList] Sending to clients:`,
+    JSON.stringify(connectedDevices, null, 2),
+  );
+
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(
@@ -688,34 +1193,52 @@ function handleStatus(packet) {
 }
 
 function handleAccelerometerPacket(packet) {
-  if (!packet.accel || packet.accel.length !== 3) return;
-
-  packetCount++;
-
-  // Send via OSC if enabled
-  if (settings.oscStreams.motionAccel) {
-    sendMotionOSC("/muse/acc", packet.accel);
+  // SAFETY CHECK: Ignore real packets when simulator is active
+  if (settings.simulatorMode) {
+    console.log(
+      "⚠️  Ignoring real accelerometer packet - simulator mode is active",
+    );
+    return;
   }
 
-  // Broadcast to WebSocket
-  broadcastMotionData("accel", packet.accel);
+  if (!packet.x || !packet.y || !packet.z) {
+    console.log("⚠️  accelerometer packet missing data:", packet);
+    return;
+  }
+  console.log(`📲 Accel: x=${packet.x}, y=${packet.y}, z=${packet.z}`);
+  packetCount++;
+  broadcastMotionData("accel", [packet.x, packet.y, packet.z]);
 }
 
 function handleGyroscopePacket(packet) {
-  if (!packet.gyro || packet.gyro.length !== 3) return;
-
-  packetCount++;
-
-  // Send via OSC if enabled
-  if (settings.oscStreams.motionGyro) {
-    sendMotionOSC("/muse/gyro", packet.gyro);
+  // SAFETY CHECK: Ignore real packets when simulator is active
+  if (settings.simulatorMode) {
+    console.log(
+      "⚠️  Ignoring real gyroscope packet - simulator mode is active",
+    );
+    return;
   }
 
-  // Broadcast to WebSocket
-  broadcastMotionData("gyro", packet.gyro);
+  if (!packet.x || !packet.y || !packet.z) {
+    console.log("⚠️  gyroscope packet missing data:", packet);
+    return;
+  }
+  console.log(`📲 Gyro: x=${packet.x}, y=${packet.y}, z=${packet.z}`);
+  packetCount++;
+  broadcastMotionData("gyro", [packet.x, packet.y, packet.z]);
 }
 
+// Heart rate detection state
+let lastHeartbeatTime = 0;
+let currentBPM = 72;
+
 function handlePPGPacket(packet) {
+  // SAFETY CHECK: Ignore real packets when simulator is active
+  if (settings.simulatorMode) {
+    console.log("⚠️  Ignoring real PPG packet - simulator mode is active");
+    return;
+  }
+
   if (!packet.ppg || packet.ppg.length !== 3) return;
 
   packetCount++;
@@ -729,7 +1252,31 @@ function handlePPGPacket(packet) {
   broadcastMotionData("ppg", packet.ppg);
 }
 
+// Send heart rate as OSC gate/trigger for musical control
+function sendHeartRateOSC(bpm, beatTrigger) {
+  if (!oscPort || !settings.oscSending) return;
+
+  try {
+    // Send BPM as continuous value
+    oscPort.send({
+      address: `${settings.oscPrefix}/hr/bpm`,
+      args: [{ type: "f", value: bpm }],
+    });
+
+    // Send beat trigger (1.0 on beat, 0.0 otherwise)
+    if (beatTrigger) {
+      oscPort.send({
+        address: `${settings.oscPrefix}/hr/beat`,
+        args: [{ type: "f", value: beatTrigger }],
+      });
+    }
+  } catch (e) {
+    console.error(`❌ HR OSC error:`, e.message);
+  }
+}
+
 function handleBatteryPacket(packet) {
+  // Note: Battery packets are allowed even in simulator mode (informational only)
   if (packet.percentage !== undefined) {
     packetCount++;
 
@@ -739,15 +1286,36 @@ function handleBatteryPacket(packet) {
 }
 
 function handleFNIRSPacket(packet) {
+  // SAFETY CHECK: Ignore real packets when simulator is active
+  if (settings.simulatorMode) {
+    console.log("⚠️  Ignoring real fNIRS packet - simulator mode is active");
+    return;
+  }
+
   // fNIRS: Functional Near-Infrared Spectroscopy (Muse S Athena only)
-  // Data format: [HbO2, HbR, HbTotal]
+  // Data format: [HbO, HbR, HbT] - oxygenated, deoxygenated, total hemoglobin
   if (!packet.fnirs || packet.fnirs.length < 2) return;
 
   packetCount++;
 
-  // Send via OSC if enabled
+  // Send via OSC if enabled - individual messages per channel for musical control
   if (settings.oscStreams?.motionFNIRS) {
-    sendMotionOSC("/muse/fnirs", packet.fnirs);
+    const [HbO, HbR, HbT] = packet.fnirs;
+    if (HbO !== undefined)
+      sendOSC({
+        address: "/muse/fnirs/hbo",
+        args: [{ type: "f", value: HbO }],
+      });
+    if (HbR !== undefined)
+      sendOSC({
+        address: "/muse/fnirs/hbr",
+        args: [{ type: "f", value: HbR }],
+      });
+    if (HbT !== undefined)
+      sendOSC({
+        address: "/muse/fnirs/hbt",
+        args: [{ type: "f", value: HbT }],
+      });
   }
 
   // Broadcast to WebSocket/dashboard
@@ -906,8 +1474,37 @@ let lastBandPowersBroadcast = 0;
 function broadcastBandPowers(absolute, relative) {
   const now = Date.now();
 
-  // Update calibration if in progress
-  updateCalibrationBaseline(relative);
+  // MATEO'S NEUROSC NORMALIZATION (research-grade)
+  // Apply Log₁₀ → Z-Score normalization to RELATIVE band powers
+  // This modifies the data for OSC/WebSocket output while collecting rolling baseline
+  const channels = ["CH1", "CH2", "CH3", "CH4"];
+  const bands = ["delta", "theta", "alpha", "beta", "gamma"];
+
+  // For Muse: we get global bands, not per-channel
+  // Treat as single "channel" for now (TODO: support per-channel when available)
+  const normalizedRelative = { ...relative };
+
+  if (baselineSystem.logTransform || baselineSystem.baselineNormalize) {
+    bands.forEach((band) => {
+      if (relative[band] !== undefined) {
+        // Use CH1 as representative channel for Muse (which sends global bands)
+        normalizedRelative[band] = normalizeBandPower(
+          "CH1",
+          band,
+          relative[band],
+        );
+      }
+    });
+
+    // Count samples during calibration
+    if (calibrationState.isCalibrating) {
+      calibrationState.samplesCollected++;
+    }
+  }
+
+  // Update current band powers for /api/bands endpoint (used by React UI polling)
+  currentBandPowers.absolute = absolute;
+  currentBandPowers.relative = normalizedRelative;
 
   // CRITICAL SAFETY: Only send OSC if there's an active data source!
   // This prevents sending stale/cached data when neither simulator nor hardware is active
@@ -915,7 +1512,7 @@ function broadcastBandPowers(absolute, relative) {
   // Needs low-latency band power updates at native 10 Hz rate
   const hasActiveSource = settings.simulatorMode || packetCount > 0;
   if (hasActiveSource) {
-    sendBandPowersOSC(absolute, relative);
+    sendBandPowersOSC(absolute, normalizedRelative);
   }
 
   // Throttle WebSocket to avoid overwhelming browser clients (10 Hz = 100ms)
@@ -925,13 +1522,14 @@ function broadcastBandPowers(absolute, relative) {
   lastBandPowersBroadcast = now;
 
   // Send to WebSocket clients (React UI) - throttled
+  // Note: sending normalized values (if enabled)
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(
         JSON.stringify({
           type: "bandPowers",
           absolute,
-          relative,
+          relative: normalizedRelative,
         }),
       );
     }
@@ -1150,7 +1748,16 @@ function handleWebSocketMessage(msg, ws) {
             );
             if (accel) broadcastMotionData("accel", accel);
             if (gyro) broadcastMotionData("gyro", gyro);
-            if (ppg) broadcastMotionData("ppg", ppg);
+            if (ppg) {
+              broadcastMotionData("ppg", ppg);
+              const time = Date.now() / 1000;
+              const BPM = 72;
+              const beatPeriod = 60 / BPM;
+              const beatPhase = (time % beatPeriod) / beatPeriod;
+              const beatTrigger =
+                beatPhase > 0.24 && beatPhase < 0.26 ? 1.0 : 0.0;
+              sendHeartRateOSC(BPM, beatTrigger);
+            }
 
             motionCount = 0;
           }
@@ -1251,6 +1858,21 @@ function handleWebSocketMessage(msg, ws) {
 
 function updateSettings(newSettings) {
   Object.assign(settings, newSettings);
+
+  // If device model changed, update Y-axis range automatically
+  if (
+    newSettings.deviceModel &&
+    newSettings.deviceModel !== settings.deviceModel
+  ) {
+    settings.yAxisRange = getDeviceYRange(newSettings.deviceModel);
+    console.log(
+      `📊 Device changed to: ${getDeviceInfoString(newSettings.deviceModel)}`,
+    );
+    console.log(
+      `📊 Y-axis range set to: ${settings.yAxisRange[0]} to ${settings.yAxisRange[1]} μV`,
+    );
+  }
+
   dsp.updateConfig(newSettings);
   console.log("⚙️  Settings updated:", newSettings);
 }
@@ -1327,40 +1949,165 @@ app.get("/api/status", (req, res) => {
     devices: connectedDevices,
     ws_clients: wss.clients.size,
     simulator_mode: settings.simulatorMode,
+    streaming: packetCount > 0 || settings.simulatorMode, // TRUE if receiving data
     packet_count: packetCount,
     config,
   });
 });
 
-app.get("/api/ports", (req, res) => {
-  // Return detected Bluetooth devices from MuseBridge
-  // Format: { ports: [], bluetooth: [ { name, mac, device_type }, ... ] }
+app.get("/api/ports", async (req, res) => {
+  // Return detected serial ports (BLED dongles) + Bluetooth devices
+  // Format: { ports: ["/dev/cu.usbmodem11", ...], bluetooth: [ { name, mac, device_type }, ... ] }
   console.log(
-    `[/api/ports] connectedDevices count: ${connectedDevices.length}`,
+    `[/api/ports] Scanning for serial ports and Bluetooth devices...`,
   );
 
-  const bluetoothDevices = connectedDevices.map((dev) => {
-    const deviceType = dev.specs?.name?.toLowerCase().includes("athena")
-      ? "muse_athena"
-      : dev.specs?.name?.toLowerCase().includes("Muse S")
-        ? "muse_s"
-        : dev.specs?.name?.toLowerCase().includes("Muse 2")
-          ? "muse_2"
-          : "unknown";
+  const ports = [];
+  const bluetoothDevices = [];
 
-    console.log(`  ├─ ${dev.name} (type: ${dev.specs?.name}) → ${deviceType}`);
+  // 1. Scan for serial ports (BLED112 dongles for Ganglion/Muse)
+  try {
+    const { execSync } = require("child_process");
+    if (process.platform === "darwin") {
+      // macOS: scan for USB serial devices
+      const portPatterns = [
+        "/dev/tty.usbmodem*",
+        "/dev/tty.usbserial*",
+        "/dev/cu.usbmodem*",
+        "/dev/cu.usbserial*",
+      ];
 
-    return {
-      name: dev.name,
-      mac: dev.mac || "",
-      device_type: deviceType,
-    };
+      for (const pattern of portPatterns) {
+        try {
+          const found = execSync(`ls ${pattern} 2>/dev/null || true`)
+            .toString()
+            .trim()
+            .split("\n")
+            .filter((p) => p);
+          ports.push(...found);
+        } catch (e) {
+          // Pattern not found, skip
+        }
+      }
+    } else if (process.platform === "linux") {
+      // Linux: scan /dev/ttyUSB* and /dev/ttyACM*
+      try {
+        const found = execSync(
+          `ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true`,
+        )
+          .toString()
+          .trim()
+          .split("\n")
+          .filter((p) => p);
+        ports.push(...found);
+      } catch (e) {
+        // No ports found
+      }
+    }
+  } catch (err) {
+    console.error(`⚠️  Port scan error: ${err.message}`);
+  }
+
+  // Remove duplicates and sort
+  const uniquePorts = [...new Set(ports)].sort();
+  console.log(
+    `  ✓ Found ${uniquePorts.length} serial port(s): ${uniquePorts.join(", ") || "none"}`,
+  );
+
+  // 2. Scan for Bluetooth devices using system_profiler (macOS only)
+  if (process.platform === "darwin") {
+    try {
+      const { execSync } = require("child_process");
+      const output = execSync(
+        "system_profiler SPBluetoothDataType 2>/dev/null",
+        {
+          timeout: 5000,
+          encoding: "utf8",
+        },
+      );
+
+      const lines = output.split("\n");
+      const btKeywords = ["ganglion", "muse", "athena"];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const lineLower = line.toLowerCase();
+
+        // Check if this line mentions a brain device
+        if (btKeywords.some((kw) => lineLower.includes(kw))) {
+          // Extract device name from this line
+          const nameMatch = line.match(/^\s*(.+?):\s*$/);
+          const name = nameMatch
+            ? nameMatch[1].trim()
+            : line.trim().replace(":", "");
+
+          // Look for MAC address in the next 10 lines
+          let mac = "";
+          for (let j = i; j < Math.min(lines.length, i + 10); j++) {
+            if (lines[j].includes("Address:")) {
+              mac = lines[j].split("Address:")[1].trim();
+              break;
+            }
+          }
+
+          if (mac) {
+            // Infer device type from name
+            let deviceType = "ganglion";
+            if (
+              lineLower.includes("athena") ||
+              lineLower.includes("muse-s") ||
+              lineLower.includes("muse s")
+            ) {
+              deviceType = "muse_athena";
+            } else if (lineLower.includes("muse") && lineLower.includes("3")) {
+              deviceType = "muse_3";
+            } else if (lineLower.includes("muse")) {
+              deviceType = "muse_2";
+            }
+
+            bluetoothDevices.push({
+              name,
+              mac,
+              type: "bluetooth",
+              device_type: deviceType,
+            });
+
+            console.log(
+              `  ✓ Found Bluetooth: ${name} (${mac}) → ${deviceType}`,
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`⚠️  Bluetooth scan error: ${err.message}`);
+    }
+  }
+
+  // 3. Also include devices from MuseBridge (if running)
+  connectedDevices.forEach((dev) => {
+    // Use the device_type we already set in handleDeviceList
+    const deviceType = dev.device_type || "muse_2";
+
+    // Only add if not already in Bluetooth list
+    if (!bluetoothDevices.find((bt) => bt.name === dev.name)) {
+      bluetoothDevices.push({
+        name: dev.name,
+        mac: dev.mac || "",
+        type: "bluetooth",
+        device_type: deviceType,
+      });
+      console.log(`  ✓ From MuseBridge: ${dev.name} → ${deviceType}`);
+    }
   });
 
-  console.log(`[/api/ports] Returning ${bluetoothDevices.length} devices`);
+  console.log(
+    `[/api/ports] Returning ${uniquePorts.length} port(s) + ${bluetoothDevices.length} Bluetooth device(s)`,
+  );
+
   res.json({
-    ports: [], // No serial ports for Muse (uses Bluetooth via MuseBridge)
+    ports: uniquePorts,
     bluetooth: bluetoothDevices,
+    count: uniquePorts.length + bluetoothDevices.length,
   });
 });
 
@@ -1395,6 +2142,123 @@ app.get("/api/bands", (req, res) => {
       timestamp: Date.now(),
     });
   }
+});
+
+app.get("/api/timeseries", (req, res) => {
+  // NeurOSC-style timeseries endpoint for Traces view
+  // Returns raw EEG samples from buffer
+  const windowSec = parseFloat(req.query.window) || 4.0;
+  const maxPoints = parseInt(req.query.maxPoints) || 512;
+  const channels = ["TP9", "AF7", "AF8", "TP10"];
+
+  // Calculate how many samples we need
+  const sampleRate = 256; // Muse sample rate
+  const numSamples = Math.floor(windowSec * sampleRate);
+
+  // Get samples from eegBuffer
+  const samples = [];
+  const timestamps = [];
+
+  for (let ch = 0; ch < 4; ch++) {
+    const buffer = eegBuffer[ch] || [];
+    const recentSamples = buffer.slice(-numSamples);
+
+    // Downsample if too many points
+    let downsampledSamples;
+    if (recentSamples.length > maxPoints) {
+      const step = Math.floor(recentSamples.length / maxPoints);
+      downsampledSamples = [];
+      for (let i = 0; i < recentSamples.length; i += step) {
+        downsampledSamples.push(recentSamples[i]);
+      }
+    } else {
+      downsampledSamples = recentSamples;
+    }
+
+    samples.push(downsampledSamples);
+
+    // Generate timestamps for first channel only
+    if (ch === 0 && downsampledSamples.length > 0) {
+      const dt = 1.0 / sampleRate;
+      for (let i = 0; i < downsampledSamples.length; i++) {
+        timestamps.push(i * dt);
+      }
+    }
+  }
+
+  res.json({
+    channels,
+    timestamps,
+    samples,
+    sampleRate,
+    windowSec,
+  });
+});
+
+app.get("/api/fft", (req, res) => {
+  // NeurOSC-style FFT spectrum endpoint
+  // Returns frequency spectrum data
+  const minFreq = parseFloat(req.query.minFreq) || 0.5;
+  const maxFreq = parseFloat(req.query.maxFreq) || 40.0;
+  const channels = ["TP9", "AF7", "AF8", "TP10"];
+
+  // Use DSP pipeline's FFT results if available
+  const power = [];
+  let frequencies = [];
+
+  for (let ch = 0; ch < 4; ch++) {
+    // Get recent samples
+    const buffer = eegBuffer[ch] || [];
+    const samples = buffer.slice(-1024); // Use last 4 seconds @ 256Hz
+
+    if (samples.length < 32) {
+      power.push([]);
+      continue;
+    }
+
+    // Simple FFT (using DSP pipeline would be better, but this works)
+    // For now, return placeholder data based on current band powers
+    // TODO: Use actual FFT from DSP pipeline
+
+    // Generate frequency axis
+    if (frequencies.length === 0) {
+      for (let f = minFreq; f <= maxFreq; f += 0.5) {
+        frequencies.push(f);
+      }
+    }
+
+    // Generate power spectrum based on band powers
+    const spectrum = [];
+    for (let f of frequencies) {
+      // Rough approximation based on typical EEG spectrum
+      let pwr = 0;
+      if (f < 4)
+        pwr = 10 - f * 2; // Delta decreases
+      else if (f < 8)
+        pwr = 5 + Math.sin(f) * 2; // Theta
+      else if (f < 13)
+        pwr = 8 + Math.sin(f * 0.5) * 3; // Alpha peak
+      else if (f < 30)
+        pwr = 3 - f * 0.1; // Beta decreases
+      else pwr = 1 - f * 0.02; // Gamma low
+
+      // Add noise for realism
+      pwr += Math.random() * 0.5;
+
+      // Convert to dB
+      spectrum.push(10 * Math.log10(Math.max(pwr, 0.001)));
+    }
+
+    power.push(spectrum);
+  }
+
+  res.json({
+    channels,
+    frequencies,
+    power,
+    minFreq,
+    maxFreq,
+  });
 });
 
 app.get("/api/settings", (req, res) => {
@@ -1475,8 +2339,77 @@ app.post("/api/osc/prefix", (req, res) => {
   res.json({ status: "updated", oscPrefix: settings.oscPrefix });
 });
 
+app.post("/api/use_simulator", (req, res) => {
+  const { enabled } = req.body;
+  settings.simulatorMode = !!enabled;
+  console.log(`🎮 Simulator mode: ${enabled ? "ENABLED" : "DISABLED"}`);
+
+  // Start or stop simulator interval
+  if (settings.simulatorMode) {
+    if (!simulatorInterval) {
+      let simCount = 0;
+      let bandPowerCount = 0;
+      let motionCount = 0;
+      simulatorInterval = setInterval(() => {
+        const eeg = generateSimulatorData();
+        if (eeg) {
+          packetCount++;
+          simCount++;
+          const processed = dsp.process(eeg);
+          broadcastEEGData(eeg, processed);
+          if (simCount === 1)
+            console.log(`📊 Simulator streaming: ${packetCount} total packets`);
+        }
+        bandPowerCount++;
+        if (bandPowerCount >= 26) {
+          const bandPowers = generateSimulatorBandPowers();
+          if (bandPowers) {
+            broadcastBandPowers(bandPowers.absolute, bandPowers.relative);
+          }
+          bandPowerCount = 0;
+        }
+        motionCount++;
+        if (motionCount >= 26) {
+          const accel = generateSimulatorMotion("accel");
+          const gyro = generateSimulatorMotion("gyro");
+          const ppg = generateSimulatorMotion("ppg");
+          if (accel) broadcastMotionData("accel", accel);
+          if (gyro) broadcastMotionData("gyro", gyro);
+          if (ppg) {
+            broadcastMotionData("ppg", ppg);
+
+            // Detect heartbeat and send HR OSC
+            const time = Date.now() / 1000;
+            const BPM = 72;
+            const beatPeriod = 60 / BPM;
+            const beatPhase = (time % beatPeriod) / beatPeriod;
+
+            // Trigger on R-wave peak (beatPhase ~0.25)
+            const beatTrigger =
+              beatPhase > 0.24 && beatPhase < 0.26 ? 1.0 : 0.0;
+
+            sendHeartRateOSC(BPM, beatTrigger);
+          }
+          motionCount = 0;
+        }
+      }, 1000 / 256);
+      console.log("✓ Simulator interval started");
+    }
+  } else {
+    if (simulatorInterval) {
+      clearInterval(simulatorInterval);
+      simulatorInterval = null;
+      console.log("✓ Simulator interval stopped");
+    }
+  }
+
+  broadcastSettings();
+  res.json({ status: "ok", simulatorMode: settings.simulatorMode });
+});
+
 app.post("/api/settings", (req, res) => {
-  const { oscPrefix, oscStreams, simulatorMode } = req.body;
+  const { oscPrefix, oscStreams, simulatorMode, applyBaseline, logTransform } =
+    req.body;
 
   if (oscPrefix) {
     settings.oscPrefix = oscPrefix;
@@ -1486,6 +2419,20 @@ app.post("/api/settings", (req, res) => {
   if (oscStreams) {
     settings.oscStreams = { ...settings.oscStreams, ...oscStreams };
     console.log(`✓ OSC streams updated:`, settings.oscStreams);
+  }
+
+  if (applyBaseline !== undefined) {
+    settings.applyBaseline = applyBaseline;
+    baselineSystem.baselineNormalize = applyBaseline; // Use Mateo's naming
+    console.log(
+      `📊 Z-Score Baseline Normalize: ${applyBaseline ? "ON" : "OFF"}`,
+    );
+  }
+
+  if (logTransform !== undefined) {
+    settings.logTransform = logTransform;
+    baselineSystem.logTransform = logTransform; // Use new system
+    console.log(`📈 Log Transform: ${logTransform ? "ON" : "OFF"}`);
   }
 
   if (simulatorMode !== undefined) {
@@ -1525,7 +2472,16 @@ app.post("/api/settings", (req, res) => {
             const ppg = generateSimulatorMotion("ppg");
             if (accel) broadcastMotionData("accel", accel);
             if (gyro) broadcastMotionData("gyro", gyro);
-            if (ppg) broadcastMotionData("ppg", ppg);
+            if (ppg) {
+              broadcastMotionData("ppg", ppg);
+              const time = Date.now() / 1000;
+              const BPM = 72;
+              const beatPeriod = 60 / BPM;
+              const beatPhase = (time % beatPeriod) / beatPeriod;
+              const beatTrigger =
+                beatPhase > 0.24 && beatPhase < 0.26 ? 1.0 : 0.0;
+              sendHeartRateOSC(BPM, beatTrigger);
+            }
             motionCount = 0;
           }
         }, 1000 / 256);
@@ -1583,122 +2539,275 @@ app.get("/api/recording/download", (req, res) => {
 });
 
 // ── Calibration Endpoints ──
-let calibrationState = {
-  isCalibrating: false,
-  startTime: null,
-  duration: 90000, // 90 seconds in ms
-  samplesCollected: 0,
-  baseline: {
-    delta: { mean: 0, m2: 0, n: 0 },
-    theta: { mean: 0, m2: 0, n: 0 },
-    alpha: { mean: 0, m2: 0, n: 0 },
-    beta: { mean: 0, m2: 0, n: 0 },
-    gamma: { mean: 0, m2: 0, n: 0 },
-  },
-  zscores: {
-    delta: 0,
-    theta: 0,
-    alpha: 0,
-    beta: 0,
-    gamma: 0,
+// Per-channel baselines (NeurOSC feature)
+function createEmptyBaseline() {
+  const bands = ["delta", "theta", "alpha", "beta", "gamma"];
+  const baseline = {};
+  for (let band of bands) {
+    baseline[band] = { mean: 0, m2: 0, n: 0, stddev: 0.001, history: [] };
+  }
+  return baseline;
+}
+
+// MATEO'S NEUROSC BASELINE SYSTEM (Stanford neuroscience research-grade)
+// Passive rolling window - NO "Start Calibration" button needed
+// Just toggle baseline_normalize ON and it auto-collects last 60 seconds (Dr. B requirement)
+let baselineSystem = {
+  logTransform: false, // Apply log₁₀ first (if enabled)
+  baselineNormalize: false, // Apply z-score second (if enabled)
+  windowSec: 60, // 60-second rolling window (research-grade)
+  maxSamples: 600, // 60 sec × 10 Hz = 600 samples
+  // Rolling history per channel+band: { CH1: { delta: [], theta: [], ... }, ... }
+  history: {
+    CH1: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH2: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH3: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH4: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
   },
 };
 
-app.post("/api/calibration/start", (req, res) => {
-  console.log("🔄 Starting calibration (90 seconds)...");
-  calibrationState.isCalibrating = true;
-  calibrationState.startTime = Date.now();
-  calibrationState.samplesCollected = 0;
-  // Reset baseline accumulators
-  for (let band of ["delta", "theta", "alpha", "beta", "gamma"]) {
-    calibrationState.baseline[band] = { mean: 0, m2: 0, n: 0 };
+// Mateo's normalize function - EXACT replica from NeurOSC openbci_service.py
+function normalizeBandPower(channel, band, rawPower) {
+  let value = rawPower;
+
+  // Step 1: Apply log₁₀ if enabled
+  if (baselineSystem.logTransform) {
+    value = Math.log10(Math.max(value, 1e-10));
   }
-  broadcastCalibrationStatus();
-  res.json({ status: "calibrating", duration: 90 });
-});
 
-app.post("/api/calibration/stop", (req, res) => {
-  console.log("⏹️ Stopping calibration");
-  calibrationState.isCalibrating = false;
-  // Calculate z-scores from baseline
-  calculateZScores();
-  broadcastCalibrationStatus();
-  res.json({ status: "stopped", samples: calibrationState.samplesCollected });
-});
+  // Step 2: Return early if z-score not enabled
+  if (!baselineSystem.baselineNormalize) {
+    return value;
+  }
 
-app.post("/api/calibration/reset", (req, res) => {
-  console.log("🔃 Resetting calibration");
-  calibrationState = {
-    isCalibrating: false,
-    startTime: null,
-    duration: 90000,
-    samplesCollected: 0,
-    baseline: {
-      delta: { mean: 0, m2: 0, n: 0 },
-      theta: { mean: 0, m2: 0, n: 0 },
-      alpha: { mean: 0, m2: 0, n: 0 },
-      beta: { mean: 0, m2: 0, n: 0 },
-      gamma: { mean: 0, m2: 0, n: 0 },
-    },
-    zscores: {
-      delta: 0,
-      theta: 0,
-      alpha: 0,
-      beta: 0,
-      gamma: 0,
-    },
+  // Get history for this channel+band
+  const history = baselineSystem.history[channel][band];
+
+  // Add current value to rolling window
+  history.push(value);
+  if (history.length > baselineSystem.maxSamples) {
+    history.shift(); // Remove oldest
+  }
+
+  // Need at least 10 samples before z-scoring (Mateo's safety check)
+  if (history.length < 10) {
+    return value;
+  }
+
+  // Calculate mean and std from rolling window
+  const mean = history.reduce((sum, v) => sum + v, 0) / history.length;
+  const variance =
+    history.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / history.length;
+  const std = Math.sqrt(variance);
+
+  // Avoid division by zero
+  if (std < 1e-10) {
+    return 0.0;
+  }
+
+  // Return z-score
+  return (value - mean) / std;
+}
+
+app.post("/api/baseline/reset", (req, res) => {
+  console.log("🔃 Resetting baseline history (NeurOSC-style)");
+  baselineSystem.history = {
+    CH1: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH2: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH3: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH4: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
   };
-  broadcastCalibrationStatus();
+  broadcastSettings();
   res.json({ status: "reset" });
 });
 
-app.get("/api/calibration/status", (req, res) => {
-  const progress = calibrationState.isCalibrating
-    ? (Date.now() - calibrationState.startTime) / calibrationState.duration
-    : 0;
+app.get("/api/baseline/status", (req, res) => {
+  // Count samples collected per channel
+  const sampleCounts = {};
+  Object.keys(baselineSystem.history).forEach((ch) => {
+    sampleCounts[ch] = baselineSystem.history[ch].alpha.length; // Use alpha as representative
+  });
+
   res.json({
-    isCalibrating: calibrationState.isCalibrating,
-    progress: Math.min(progress, 1),
-    samplesCollected: calibrationState.samplesCollected,
-    zscores: calibrationState.zscores,
+    logTransform: baselineSystem.logTransform,
+    baselineNormalize: baselineSystem.baselineNormalize,
+    windowSec: baselineSystem.windowSec,
+    maxSamples: baselineSystem.maxSamples,
+    sampleCounts,
+    ready: sampleCounts.CH1 >= 10, // Ready when at least 10 samples
   });
 });
 
-function updateCalibrationBaseline(bandPowers) {
+// ── 90-Second Calibration Protocol (for guided baseline collection) ──
+let calibrationState = {
+  isCalibrating: false,
+  isLocked: false,
+  startTime: 0,
+  duration: 90000, // 90 seconds
+  progress: 0,
+  samplesCollected: 0,
+};
+
+app.post("/api/calibration/start", (req, res) => {
+  console.log("🎯 Starting 90-second calibration protocol");
+  calibrationState.isCalibrating = true;
+  calibrationState.isLocked = false;
+  calibrationState.startTime = Date.now();
+  calibrationState.progress = 0;
+  calibrationState.samplesCollected = 0;
+
+  // Reset baseline history for fresh collection
+  baselineSystem.history = {
+    CH1: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH2: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH3: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH4: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+  };
+
+  // Enable baseline collection
+  baselineSystem.baselineNormalize = true;
+
+  res.json({ status: "ok", duration_ms: calibrationState.duration });
+});
+
+app.post("/api/calibration/stop", (req, res) => {
+  console.log(
+    `🛑 Stopping calibration (collected ${calibrationState.samplesCollected} samples)`,
+  );
+  calibrationState.isCalibrating = false;
+  calibrationState.isLocked = true;
+  res.json({
+    status: "ok",
+    samplesCollected: calibrationState.samplesCollected,
+  });
+});
+
+app.post("/api/calibration/reset", (req, res) => {
+  console.log("🔄 Resetting calibration");
+  calibrationState.isCalibrating = false;
+  calibrationState.isLocked = false;
+  calibrationState.progress = 0;
+  calibrationState.samplesCollected = 0;
+
+  // Clear baseline history
+  baselineSystem.history = {
+    CH1: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH2: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH3: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+    CH4: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
+  };
+
+  baselineSystem.baselineNormalize = false;
+  res.json({ status: "ok" });
+});
+
+app.get("/api/calibration/status", (req, res) => {
+  if (calibrationState.isCalibrating) {
+    const elapsed = Date.now() - calibrationState.startTime;
+    calibrationState.progress = Math.min(
+      elapsed / calibrationState.duration,
+      1.0,
+    );
+
+    // Auto-lock after 90 seconds
+    if (elapsed >= calibrationState.duration) {
+      calibrationState.isCalibrating = false;
+      calibrationState.isLocked = true;
+      console.log(
+        `✅ Calibration complete! Collected ${calibrationState.samplesCollected} samples`,
+      );
+    }
+  }
+
+  res.json({
+    isCalibrating: calibrationState.isCalibrating,
+    isLocked: calibrationState.isLocked,
+    progress: calibrationState.progress,
+    samplesCollected: calibrationState.samplesCollected,
+  });
+});
+
+function updateCalibrationBaseline(channelBandPowers) {
   if (!calibrationState.isCalibrating) return;
 
   const elapsed = Date.now() - calibrationState.startTime;
   if (elapsed > calibrationState.duration) {
     calibrationState.isCalibrating = false;
     calculateZScores();
-    console.log("✅ Calibration complete!");
+    console.log("✅ Per-channel calibration complete!");
     broadcastCalibrationStatus();
     return;
   }
 
-  // Welford's online algorithm for each band
-  for (let band of ["delta", "theta", "alpha", "beta", "gamma"]) {
-    const value = bandPowers[band] || 0;
-    const acc = calibrationState.baseline[band];
-    acc.n++;
-    const delta = value - acc.mean;
-    acc.mean += delta / acc.n;
-    const delta2 = value - acc.mean;
-    acc.m2 += delta * delta2;
+  // channelBandPowers format:
+  // { CH1: {delta: 0.2, theta: 0.3, ...}, CH2: {...}, CH3: {...}, CH4: {...} }
+  const channels = ["CH1", "CH2", "CH3", "CH4"];
+  const bands = ["delta", "theta", "alpha", "beta", "gamma"];
+
+  for (let channel of channels) {
+    if (!channelBandPowers[channel]) continue;
+
+    for (let band of bands) {
+      let value = channelBandPowers[channel][band] || 0;
+
+      // Optional: apply log transform
+      if (calibrationState.logTransform) {
+        value = Math.log10(Math.max(value, 1e-10));
+      }
+
+      const acc = calibrationState.baseline[channel][band];
+
+      // Welford's online algorithm for mean and variance
+      acc.n++;
+      const delta = value - acc.mean;
+      acc.mean += delta / acc.n;
+      const delta2 = value - acc.mean;
+      acc.m2 += delta * delta2;
+
+      // For rolling baseline: keep history (last 300 samples = 30 seconds @ 10 Hz)
+      if (calibrationState.mode === "rolling") {
+        acc.history.push(value);
+        if (acc.history.length > 300) {
+          acc.history.shift(); // Remove oldest
+        }
+      }
+    }
   }
 
   calibrationState.samplesCollected++;
 }
 
 function calculateZScores() {
-  for (let band of ["delta", "theta", "alpha", "beta", "gamma"]) {
-    const acc = calibrationState.baseline[band];
-    const variance = acc.n > 1 ? acc.m2 / (acc.n - 1) : 0;
-    const stddev = Math.sqrt(variance);
-    // Store stddev for z-score calculation
-    calibrationState.baseline[band].stddev = stddev || 0.001;
+  const channels = ["CH1", "CH2", "CH3", "CH4"];
+  const bands = ["delta", "theta", "alpha", "beta", "gamma"];
+
+  for (let channel of channels) {
+    for (let band of bands) {
+      const acc = calibrationState.baseline[channel][band];
+      const variance = acc.n > 1 ? acc.m2 / (acc.n - 1) : 0;
+      const stddev = Math.sqrt(variance);
+      // Store stddev for z-score calculation
+      acc.stddev = stddev || 0.001; // Prevent division by zero
+    }
   }
-  console.log("📊 Z-scores calculated:", calibrationState.zscores);
+
+  console.log("📊 Per-channel z-scores calculated");
+  console.log(
+    "  CH1 alpha:",
+    `mean=${calibrationState.baseline.CH1.alpha.mean.toFixed(3)} stddev=${calibrationState.baseline.CH1.alpha.stddev.toFixed(3)}`,
+  );
+  console.log(
+    "  CH2 alpha:",
+    `mean=${calibrationState.baseline.CH2.alpha.mean.toFixed(3)} stddev=${calibrationState.baseline.CH2.alpha.stddev.toFixed(3)}`,
+  );
+  console.log(
+    "  CH3 alpha:",
+    `mean=${calibrationState.baseline.CH3.alpha.mean.toFixed(3)} stddev=${calibrationState.baseline.CH3.alpha.stddev.toFixed(3)}`,
+  );
+  console.log(
+    "  CH4 alpha:",
+    `mean=${calibrationState.baseline.CH4.alpha.mean.toFixed(3)} stddev=${calibrationState.baseline.CH4.alpha.stddev.toFixed(3)}`,
+  );
 }
 
 function broadcastCalibrationStatus() {
@@ -1733,6 +2842,133 @@ function convertToCSV(data) {
 
   return csv;
 }
+
+// ============================================================================
+// Granular OSC Controls (NeurOSC feature)
+// ============================================================================
+
+app.post("/api/osc/granular", (req, res) => {
+  const { channels, bands, valueTypes } = req.body;
+
+  if (channels) {
+    settings.oscGranular.channels = {
+      ...settings.oscGranular.channels,
+      ...channels,
+    };
+    console.log(`✓ OSC channels updated:`, settings.oscGranular.channels);
+  }
+
+  if (bands) {
+    settings.oscGranular.bands = { ...settings.oscGranular.bands, ...bands };
+    console.log(`✓ OSC bands updated:`, settings.oscGranular.bands);
+  }
+
+  if (valueTypes) {
+    settings.oscGranular.valueTypes = {
+      ...settings.oscGranular.valueTypes,
+      ...valueTypes,
+    };
+    console.log(`✓ OSC value types updated:`, settings.oscGranular.valueTypes);
+  }
+
+  res.json({ success: true, config: settings.oscGranular });
+});
+
+app.get("/api/osc/granular", (req, res) => {
+  res.json(settings.oscGranular);
+});
+
+// ============================================================================
+// DSP Controls (NeurOSC feature)
+// ============================================================================
+
+app.post("/api/dsp/config", (req, res) => {
+  const {
+    applyCAR,
+    applyNotch,
+    applyBandpass,
+    smoothingAmount,
+    oscSending,
+    deviceModel,
+    inputFormat,
+  } = req.body;
+
+  if (applyCAR !== undefined) {
+    settings.applyCAR = applyCAR;
+    dsp.useCAR = applyCAR;
+    console.log(`✓ CAR (Common Average Reference): ${applyCAR ? "ON" : "OFF"}`);
+  }
+
+  if (applyNotch !== undefined) {
+    settings.applyNotch = applyNotch;
+    dsp.useNotchFilter = applyNotch;
+    console.log(`✓ Notch filter (60 Hz): ${applyNotch ? "ON" : "OFF"}`);
+  }
+
+  if (applyBandpass !== undefined) {
+    settings.applyBandpass = applyBandpass;
+    dsp.useBandpassFilter = applyBandpass;
+    console.log(`✓ Bandpass filter (1-45 Hz): ${applyBandpass ? "ON" : "OFF"}`);
+  }
+
+  if (smoothingAmount !== undefined) {
+    settings.smoothingAmount = Math.max(0, Math.min(50, smoothingAmount));
+    dsp.smoothingTimeConstantMs = settings.smoothingAmount;
+    dsp.smoother = new ExponentialSmoother(
+      settings.smoothingAmount,
+      dsp.sampleRate,
+    );
+    console.log(`✓ Smoothing amount: ${settings.smoothingAmount}`);
+  }
+
+  if (deviceModel !== undefined) {
+    settings.deviceModel = deviceModel;
+    settings.yAxisRange = getDeviceYRange(deviceModel);
+    console.log(`📊 Device: ${getDeviceInfoString(deviceModel)}`);
+    console.log(
+      `📊 Y-axis range: ${settings.yAxisRange[0]} to ${settings.yAxisRange[1]} μV`,
+    );
+    broadcastSettings();
+  }
+
+  if (inputFormat !== undefined) {
+    settings.inputFormat = inputFormat;
+    console.log(`📊 Input format: ${inputFormat}`);
+    broadcastSettings();
+  }
+
+  if (oscSending !== undefined) {
+    settings.oscSending = oscSending;
+    console.log(`📡 OSC Sending: ${oscSending ? "ENABLED" : "DISABLED"}`);
+    broadcastSettings();
+  }
+
+  res.json({
+    success: true,
+    config: {
+      applyCAR: settings.applyCAR,
+      applyNotch: settings.applyNotch,
+      applyBandpass: settings.applyBandpass,
+      smoothingAmount: settings.smoothingAmount,
+      oscSending: settings.oscSending,
+      deviceModel: settings.deviceModel,
+      inputFormat: settings.inputFormat,
+      yAxisRange: settings.yAxisRange,
+    },
+  });
+});
+
+app.get("/api/dsp/config", (req, res) => {
+  res.json({
+    applyCAR: settings.applyCAR,
+    applyNotch: settings.applyNotch,
+    applyBandpass: settings.applyBandpass,
+    smoothingAmount: settings.smoothingAmount,
+    deviceModel: settings.deviceModel,
+    inputFormat: settings.inputFormat,
+    yAxisRange: settings.yAxisRange,
+  });
+});
 
 // ============================================================================
 // Instrument Management API

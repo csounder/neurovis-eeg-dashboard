@@ -1053,7 +1053,7 @@ let state = {
     alphaThreshold: 0.5,
     betaThreshold: 0.4,
     deltaThreshold: 0.6,
-    alertSounds: true,
+    alertSounds: false, // Default OFF - enable via header toggle
     activeAlerts: {
       alpha: false,
       beta: false,
@@ -1545,13 +1545,7 @@ function handleServerMessage(msg) {
         const btDevs = msg.devices.map((dev) => ({
           name: dev.name,
           mac: dev.mac || "",
-          device_type: dev.specs?.name?.toLowerCase().includes("athena")
-            ? "muse_athena"
-            : dev.specs?.name?.toLowerCase().includes("Muse S")
-              ? "muse_s"
-              : dev.specs?.name?.toLowerCase().includes("Muse 2")
-                ? "muse_2"
-                : "unknown",
+          device_type: dev.device_type || "muse_2", // Use device_type from server
         }));
         window._reactSetBtDevs(btDevs);
       }
@@ -1573,13 +1567,7 @@ function handleServerMessage(msg) {
         const btDevs = (msg.devices || []).map((dev) => ({
           name: dev.name,
           mac: dev.mac || "",
-          device_type: dev.specs?.name?.toLowerCase().includes("athena")
-            ? "muse_athena"
-            : dev.specs?.name?.toLowerCase().includes("Muse S")
-              ? "muse_s"
-              : dev.specs?.name?.toLowerCase().includes("Muse 2")
-                ? "muse_2"
-                : "unknown",
+          device_type: dev.device_type || "muse_2", // Use device_type from server
         }));
         window._reactSetBtDevs(btDevs);
       }
@@ -2702,9 +2690,13 @@ function updatePerformanceMetrics() {
   const fftReady =
     Object.keys(state.fftChart?.data?.datasets || {}).length > 0 ? "YES" : "NO";
 
-  document.getElementById("packetsPerSec").textContent = packetsPerSec;
-  document.getElementById("latencyMs").textContent = latency + "ms";
-  document.getElementById("fftReady").textContent = fftReady;
+  const packetsPerSecEl = document.getElementById("packetsPerSec");
+  const latencyMsEl = document.getElementById("latencyMs");
+  const fftReadyEl = document.getElementById("fftReady");
+
+  if (packetsPerSecEl) packetsPerSecEl.textContent = packetsPerSec;
+  if (latencyMsEl) latencyMsEl.textContent = latency + "ms";
+  if (fftReadyEl) fftReadyEl.textContent = fftReady;
 }
 
 // ============================================================================
@@ -3593,6 +3585,7 @@ function setOSCMode(mode) {
 
 function updateOSCExamples() {
   const codeEl = document.getElementById("exampleCode");
+  if (!codeEl) return; // React UI doesn't have this element
   let code = "";
 
   if (oscConfig.mode === "A") {
@@ -3645,6 +3638,7 @@ OSClisten giSock, "localhost", 7400, "/muse/bands/alpha_absolute", fAlphaTP9, fA
 function updateOSCMessages() {
   const list = document.getElementById("oscMessageList");
   const count = document.getElementById("oscMessageCount");
+  if (!list || !count) return; // React UI doesn't have these elements
   let rel = state.bandPowers.relative || {};
 
   // Apply scale if needed
@@ -3794,19 +3788,26 @@ function switchTab(tabName) {
 function updateSettingsUI() {
   // Update sidebar controls with settings from server
   // BUT: Don't update sliders that were edited very recently (within 500ms)
+
+  // React UI doesn't have these elements - skip
+  const smoothingSlider = document.getElementById("smoothingSlider");
+  if (!smoothingSlider) return;
+
   const now = Date.now();
 
   if (state.settings.smoothingAmount !== undefined) {
     const lastEdit = lastSliderUpdate["smoothingAmount"] || 0;
     if (now - lastEdit > 500) {
       // Only update if it's been >500ms since last edit
-      document.getElementById("smoothingSlider").value =
-        state.settings.smoothingAmount;
+      smoothingSlider.value = state.settings.smoothingAmount;
       const display =
         state.settings.smoothingAmount === 0
           ? "OFF"
           : state.settings.smoothingAmount;
-      document.getElementById("smoothingValue").textContent = display;
+      const smoothingValue = document.getElementById("smoothingValue");
+      if (smoothingValue) {
+        smoothingValue.textContent = display;
+      }
     }
   }
 
@@ -3814,10 +3815,13 @@ function updateSettingsUI() {
   const scalingValue = state.settings.scalingMode || state.settings.scaling;
   if (scalingValue) {
     const lastEdit = lastSliderUpdate["scalingMode"] || 0;
-    const currentValue = document.getElementById("scalingMode").value;
-    // Update only if: user hasn't edited in 500ms, OR server value differs from current
-    if (now - lastEdit > 500 || currentValue !== scalingValue.toString()) {
-      document.getElementById("scalingMode").value = scalingValue;
+    const scalingMode = document.getElementById("scalingMode");
+    if (scalingMode) {
+      const currentValue = scalingMode.value;
+      // Update only if: user hasn't edited in 500ms, OR server value differs from current
+      if (now - lastEdit > 500 || currentValue !== scalingValue.toString()) {
+        scalingMode.value = scalingValue;
+      }
     }
   }
 
@@ -3838,27 +3842,35 @@ function updateSettingsUI() {
   // Update checkboxes only if user hasn't changed them recently (1000ms debounce)
   if (state.settings.applyNotch !== undefined) {
     const lastEdit = lastSliderUpdate["applyNotch"] || 0;
-    const currentValue = document.getElementById("notchFilter").checked;
-    const newValue = state.settings.applyNotch;
-    // Only update if: >1000ms since edit AND value actually changed
-    if (now - lastEdit > 1000 && currentValue !== newValue) {
-      document.getElementById("notchFilter").checked = newValue;
-      document.getElementById("notchStatus").textContent = newValue
-        ? "ON"
-        : "OFF";
+    const notchFilter = document.getElementById("notchFilter");
+    if (notchFilter) {
+      const currentValue = notchFilter.checked;
+      const newValue = state.settings.applyNotch;
+      // Only update if: >1000ms since edit AND value actually changed
+      if (now - lastEdit > 1000 && currentValue !== newValue) {
+        notchFilter.checked = newValue;
+        const notchStatus = document.getElementById("notchStatus");
+        if (notchStatus) {
+          notchStatus.textContent = newValue ? "ON" : "OFF";
+        }
+      }
     }
   }
 
   if (state.settings.applyBandpass !== undefined) {
     const lastEdit = lastSliderUpdate["applyBandpass"] || 0;
-    const currentValue = document.getElementById("bandpassFilter").checked;
-    const newValue = state.settings.applyBandpass;
-    // Only update if: >1000ms since edit AND value actually changed
-    if (now - lastEdit > 1000 && currentValue !== newValue) {
-      document.getElementById("bandpassFilter").checked = newValue;
-      document.getElementById("bandpassStatus").textContent = newValue
-        ? "ON"
-        : "OFF";
+    const bandpassFilter = document.getElementById("bandpassFilter");
+    if (bandpassFilter) {
+      const currentValue = bandpassFilter.checked;
+      const newValue = state.settings.applyBandpass;
+      // Only update if: >1000ms since edit AND value actually changed
+      if (now - lastEdit > 1000 && currentValue !== newValue) {
+        bandpassFilter.checked = newValue;
+        const bandpassStatus = document.getElementById("bandpassStatus");
+        if (bandpassStatus) {
+          bandpassStatus.textContent = newValue ? "ON" : "OFF";
+        }
+      }
     }
   }
 
@@ -3882,18 +3894,24 @@ function updateSettingsUI() {
     const lastEdit = lastSliderUpdate["artifactThreshold"] || 0;
     if (now - lastEdit > 500) {
       // Only update if it's been >500ms since last edit
-      document.getElementById("artifactSlider").value =
-        state.settings.artifactThreshold;
-      document.getElementById("artifactValue").textContent =
-        state.settings.artifactThreshold;
+      const artifactSlider = document.getElementById("artifactSlider");
+      const artifactValue = document.getElementById("artifactValue");
+      if (artifactSlider) {
+        artifactSlider.value = state.settings.artifactThreshold;
+      }
+      if (artifactValue) {
+        artifactValue.textContent = state.settings.artifactThreshold;
+      }
     }
   }
 
   if (state.settings.simulatorMode !== undefined) {
     const lastEdit = lastSliderUpdate["simulatorMode"] || 0;
     if (now - lastEdit > 500) {
-      document.getElementById("simulatorToggle").checked =
-        state.settings.simulatorMode;
+      const simulatorToggle = document.getElementById("simulatorToggle");
+      if (simulatorToggle) {
+        simulatorToggle.checked = state.settings.simulatorMode;
+      }
     }
   }
 }

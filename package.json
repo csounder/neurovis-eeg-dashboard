@@ -39,15 +39,17 @@
     ]
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "ws": "^8.13.0",
-    "osc": "^2.4.5",
+    "brainflow": "^5.13.1",
     "dotenv": "^16.0.3",
-    "brainflow": "^5.13.1"
+    "express": "^4.18.2",
+    "osc": "^2.4.5",
+    "ws": "^8.13.0"
   },
   "devDependencies": {
+    "browser-sync": "^3.0.4",
     "electron": "^28.0.0",
     "electron-builder": "^24.0.0",
-    "nodemon": "^2.0.20"
+    "nodemon": "^2.0.20",
+    "playwright": "^1.59.1"
   }
 }
