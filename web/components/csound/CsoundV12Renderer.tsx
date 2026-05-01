@@ -6,8 +6,25 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import type { BandName, BandPowers, EEGMessage } from "@/lib/types";
-import { attachConcertAudioMeter, stopConcertAudioMeter } from "@/lib/concertAudioMeter";
+import { attachConcertAudioMeter, getConcertAudioLevel, stopConcertAudioMeter } from "@/lib/concertAudioMeter";
+import {
+  yieldAfterCsoundStart,
+  yieldAfterOrchestraCompiled,
+  yieldCsoundInstanceReady,
+} from "@/lib/csoundWasmYield";
+import { rewireCsoundAfterStart, wireCsoundBeforeStart } from "@/lib/csoundWebAudioWire";
 import type { CsoundObj } from "@csound/browser";
+import {
+  LAUNCHKEY_CC_NUMBERS,
+  LAUNCHKEY_CC_ROW_BOTTOM,
+  LAUNCHKEY_CC_ROW_TOP,
+  LAUNCHKEY_DEFAULT_START_NOTE,
+  LAUNCHKEY_KEY_COUNT,
+  midiNoteName,
+  MiniKeyboard,
+  VerticalControl,
+  VirtualKnob,
+} from "./VirtualLaunchkeyControls";
 
 const BAND_INDEX: Record<BandName, number> = {
   delta: 0,
@@ -25,29 +42,6 @@ const MIDI_NOTES = [
   { label: "C3", note: 60 },
 ];
 
-const LAUNCHKEY_DEFAULT_START_NOTE = 48;
-const LAUNCHKEY_KEY_COUNT = 25;
-const LAUNCHKEY_CC_NUMBERS = [21, 22, 23, 24, 25, 26, 27, 28];
-const ASCII_KEYBOARD_OFFSETS: Record<string, number> = {
-  a: 0,
-  w: 1,
-  s: 2,
-  e: 3,
-  d: 4,
-  f: 5,
-  t: 6,
-  g: 7,
-  y: 8,
-  h: 9,
-  u: 10,
-  j: 11,
-  k: 12,
-  o: 13,
-  l: 14,
-  p: 15,
-  ";": 16,
-  "'": 17,
-};
 const MIDI_SUSTAIN_INSTR_BASE = 1000;
 
 const SOUND_PRESETS = [
@@ -178,6 +172,8 @@ export function CsoundV12Renderer({
   const [orchestraModel, setOrchestraModel] = React.useState(4);
   const [soundPreset, setSoundPreset] = React.useState(0);
   const [melodyOn, setMelodyOn] = React.useState(true);
+  const [arrangementBedOn, setArrangementBedOn] = React.useState(true);
+  const [arrangementMix, setArrangementMix] = React.useState(0.72);
   const [printDashboard, setPrintDashboard] = React.useState(false);
   const [launchkeyStartNote, setLaunchkeyStartNote] = React.useState(LAUNCHKEY_DEFAULT_START_NOTE);
   const [cc1Value, setCc1Value] = React.useState(0.64);
@@ -185,7 +181,8 @@ export function CsoundV12Renderer({
   const [launchkeyCcs, setLaunchkeyCcs] = React.useState<Record<number, number>>(() =>
     LAUNCHKEY_CC_NUMBERS.reduce(
       (acc, cc) => {
-        acc[cc] = 0;
+        // CC28 = master fader in browser instr 901; default up so level is not stuck at zero.
+        acc[cc] = cc === 28 ? 1 : 0;
         return acc;
       },
       {} as Record<number, number>,
@@ -204,6 +201,18 @@ export function CsoundV12Renderer({
   const [audioOutputStatus, setAudioOutputStatus] = React.useState<
     "default" | "ready" | "unsupported" | "error"
   >("default");
+
+  const playwrightE2E = process.env.NEXT_PUBLIC_PLAYWRIGHT === "1";
+
+  React.useEffect(() => {
+    if (!playwrightE2E || typeof window === "undefined") return;
+    const w = window as Window & { __nvConcertLevel?: () => number };
+    if (status !== "running") {
+      delete w.__nvConcertLevel;
+      return;
+    }
+    w.__nvConcertLevel = () => getConcertAudioLevel();
+  }, [playwrightE2E, status]);
 
   const appendLog = React.useCallback((line: string) => {
     const cleaned = line.trimEnd();
@@ -242,9 +251,13 @@ export function CsoundV12Renderer({
     };
   }, [latestBandsAbs, latestEEG, motion]);
 
-  const stop = React.useCallback(async () => {
+  const stop = React.useCallback(async (endStatus: "idle" | "error" = "idle") => {
     const csound = csoundRef.current;
-    if (!csound) return;
+    if (!csound) {
+      if (endStatus === "error") setStatus("error");
+      else setStatus("idle");
+      return;
+    }
     try {
       await csound.stop();
       if (hasFunction(csound, "cleanup")) {
@@ -260,16 +273,20 @@ export function CsoundV12Renderer({
       audioContextRef.current = null;
       activeSustainedNotesRef.current.clear();
       setHeldNotes(new Set());
-      setStatus("idle");
+      setStatus(endStatus);
     }
   }, [appendLog]);
 
+  const stopUnmountRef = React.useRef(stop);
+  stopUnmountRef.current = stop;
   React.useEffect(() => {
     return () => {
       disconnectMidiInputs();
-      void stop();
+      void stopUnmountRef.current();
     };
-  }, [stop]);
+  }, []);
+
+  const audioReady = status === "running";
 
   React.useEffect(() => {
     const access = midiAccessRef.current;
@@ -299,8 +316,9 @@ export function CsoundV12Renderer({
       } else if (kind === 0xb0) {
         const value = data2 / 127;
         void csound.setControlChannel(`nv_cc${data1}_value`, value);
-        if (LAUNCHKEY_CC_NUMBERS.includes(data1)) {
-          setLaunchkeyCcs((prev) => ({ ...prev, [data1]: value }));
+        const launchCc = LAUNCHKEY_CC_NUMBERS.find((c) => c === data1);
+        if (launchCc !== undefined) {
+          setLaunchkeyCcs((prev) => ({ ...prev, [launchCc]: value }));
         }
         if (data1 === 1) {
           setCc1Value(value);
@@ -342,36 +360,40 @@ export function CsoundV12Renderer({
     try {
       const { Csound } = await import("@csound/browser");
 
-      // Use the same safe Csound 6 pattern as the working Etude app:
-      // Csound creates its own AudioContext, compile a browser-sized orchestra,
-      // then start and feed score/MIDI events.
-      const csound = await Csound();
+      const csound = await Csound({ useWorker: false, autoConnect: false });
       if (!csound) throw new Error("Csound WASM failed to initialize");
-      const audioContext = await csound.getAudioContext();
-      if (audioContext) {
-        audioContextRef.current = audioContext;
-        await applyAudioOutput(audioContext, selectedAudioOutputId);
-        await audioContext.resume();
+      await yieldCsoundInstanceReady();
+
+      const audioContextInit = await csound.getAudioContext();
+      if (audioContextInit) {
+        audioContextRef.current = audioContextInit;
+        await applyAudioOutput(audioContextInit, selectedAudioOutputId);
+        await audioContextInit.resume().catch(() => {});
       }
+      const srHost = Math.round(audioContextInit?.sampleRate || 48000);
+      appendLog(
+        `Csound AudioContext "${audioContextInit?.state ?? "?"}", ${srHost} Hz (library-owned context, Etude-style init).`,
+      );
 
       csound.on("message", (msg: unknown) => appendLog(String(msg)));
       csound.on("realtimePerformanceStarted", () => {
-        appendLog("Realtime WebAudio performance started.");
-        setStatus("running");
+        appendLog("Csound realtime performance started.");
       });
       csound.on("realtimePerformanceEnded", () => {
-        appendLog("Realtime WebAudio performance ended.");
-        setStatus("idle");
+        appendLog(
+          "Csound realtime performance ended (engine event — UI stays on until you press Stop).",
+        );
       });
 
       await csound.setOption("-odac");
       await csound.setOption("-m128");
-      const compileResult = await csound.compileOrc(browserNeuroVisOrc());
+      const compileResult = await csound.compileOrc(browserNeuroVisOrc(srHost));
       if (compileResult !== 0) {
         throw new Error(`Orchestra compilation failed with code ${compileResult}`);
       }
       appendLog("Compiled lightweight NeuroVis browser Csound orchestra.");
       setStatus("compiled");
+      await yieldAfterOrchestraCompiled();
 
       csoundRef.current = csound;
       await syncControls(csound, controls, {
@@ -381,23 +403,59 @@ export function CsoundV12Renderer({
         orchestraModel,
         soundPreset,
         melodyOn,
+        arrangementBedOn,
+        arrangementMix,
         printDashboard,
         sensorGains,
       });
       await syncEeg(csound, latestBandsAbs, latestBandTraces);
       await syncSensors(csound, latestEEG, motion, batteryPct);
       await csound.readScore("f 0 86400\ni 999 0 86400\n");
+      const wiredCtx = await wireCsoundBeforeStart(csound, appendLog, {
+        concertMeter: true,
+        logLabel: "Csound V12",
+      });
+      if (!wiredCtx) {
+        throw new Error("Csound audio node was not available to wire before start() — check WebAssembly / AudioWorklet.");
+      }
+      audioContextRef.current = wiredCtx;
       await csound.start();
+      const postCtx = await rewireCsoundAfterStart(csound, appendLog, {
+        concertMeter: true,
+        logLabel: "Csound V12",
+      });
+      if (postCtx) {
+        audioContextRef.current = postCtx;
+      }
       await csound.inputMessage("i 999 0 86400");
       appendLog("Csound keepalive instrument started for live performance.");
-      appendLog("Csound WebAudio started. Silent until MIDI, virtual keys, or hold-test buttons.");
-      await connectCsoundNode(csound, appendLog);
+      await csound.inputMessage("i 908 0 -1");
+      appendLog(
+        "Auto arrangement bed on (bass + melody progression). Turn off in Mix if you want MIDI-only silence.",
+      );
+      await yieldAfterCsoundStart();
+      const ctxAfter = (await csound.getAudioContext()) ?? wiredCtx ?? audioContextInit ?? null;
+      if (ctxAfter) {
+        audioContextRef.current = ctxAfter;
+        await applyAudioOutput(ctxAfter, selectedAudioOutputId);
+        await ctxAfter.resume().catch(() => {});
+      }
+      appendLog(
+        `Csound audio graph: AudioContext "${ctxAfter?.state ?? "?"}", ${ctxAfter?.sampleRate ?? srHost} Hz.`,
+      );
+      if (ctxAfter && ctxAfter.state !== "running") {
+        appendLog(
+          `Csound browser output is still "${ctxAfter.state}" — click Resume Csound output or interact with the page; check tab/site mute and output device.`,
+        );
+      }
+      setStatus("running");
       await sendCcDefaults(csound, controls, { metroScale, chordRange, globalVolume });
+      await primeBrowserMidiCcChannels(csound);
       appendLog("Tip: press Audition Csound Engine, Audition V12 MIDI Chord, or play USB MIDI.");
+      appendLog("Browser engine: CC28 = level · CC25 = arp depth · CC26 = arp speed (full V12 arp = desktop CSD).");
     } catch (error) {
       appendLog(`Start error: ${error instanceof Error ? error.message : String(error)}`);
-      setStatus("error");
-      await stop();
+      await stop("error");
     }
   }
 
@@ -411,11 +469,15 @@ export function CsoundV12Renderer({
       orchestraModel,
       soundPreset,
       melodyOn,
+      arrangementBedOn,
+      arrangementMix,
       printDashboard,
       sensorGains,
     });
     void sendCcDefaults(csound, controls, { metroScale, chordRange, globalVolume });
   }, [
+    arrangementBedOn,
+    arrangementMix,
     chordRange,
     controls,
     globalVolume,
@@ -443,14 +505,49 @@ export function CsoundV12Renderer({
     return () => window.clearInterval(timer);
   }, [batteryPct, latestBandsAbs, latestBandTraces, latestEEG, motion, status]);
 
+  const v12OrchestraLogRef = React.useRef<{ status: typeof status; model: number }>({
+    status: "idle",
+    model: -1,
+  });
+  const v12SensorMixLogRef = React.useRef<{
+    status: typeof status;
+    solo: SensorStreamId | null;
+    mutedKey: string;
+  }>({
+    status: "idle",
+    solo: null,
+    mutedKey: "",
+  });
+
   React.useEffect(() => {
-    if (status !== "running") return;
+    if (status !== "running") {
+      v12OrchestraLogRef.current = { status, model: orchestraModel };
+      return;
+    }
+    const prev = v12OrchestraLogRef.current;
+    const enteredRunning = prev.status !== "running";
+    const modelChanged = prev.model !== orchestraModel;
+    v12OrchestraLogRef.current = { status, model: orchestraModel };
+    if (!enteredRunning && !modelChanged) return;
     appendLog(`EEG orchestra: ${ORCHESTRA_MODELS[orchestraModel]?.label}`);
     void releaseHeldTest(false);
   }, [appendLog, orchestraModel, status]);
 
   React.useEffect(() => {
-    if (status !== "running") return;
+    if (status !== "running") {
+      v12SensorMixLogRef.current = {
+        status,
+        solo: soloSensor,
+        mutedKey: Array.from(mutedSensors).sort().join(","),
+      };
+      return;
+    }
+    const mutedKey = Array.from(mutedSensors).sort().join(",");
+    const prev = v12SensorMixLogRef.current;
+    const enteredRunning = prev.status !== "running";
+    const mixChanged = prev.solo !== soloSensor || prev.mutedKey !== mutedKey;
+    v12SensorMixLogRef.current = { status, solo: soloSensor, mutedKey };
+    if (!enteredRunning && !mixChanged) return;
     const csound = csoundRef.current;
     if (!csound) return;
     const mutedList = Array.from(mutedSensors).join(", ");
@@ -571,22 +668,16 @@ export function CsoundV12Renderer({
       return;
     }
     const notes = [48, 55, 60, 64];
-    appendLog("Auditioning browser V12 chord for 1.5 seconds.");
+    appendLog(
+      "Auditioning V12 chord (instr 901, stacked voicing per tone, ~1.5s) — classic browser Csound chord sound.",
+    );
     for (const note of notes) {
-      await playBrowserNote(csound, note, 0.9, 1.5, orchestraModel);
+      await releaseSustainedMidiNote(csound, note, activeSustainedNotesRef.current);
     }
-    setHeldNotes((prev) => {
-      const next = new Set(prev);
-      notes.forEach((note) => next.add(note));
-      return next;
-    });
-    window.setTimeout(() => {
-      setHeldNotes((prev) => {
-        const next = new Set(prev);
-        notes.forEach((note) => next.delete(note));
-        return next;
-      });
-    }, 1500);
+    const dur = 1.5;
+    for (const note of notes) {
+      await playBrowserNote(csound, note, 0.88, dur, orchestraModel);
+    }
   }
 
   async function auditionCsoundEngine() {
@@ -596,28 +687,79 @@ export function CsoundV12Renderer({
       return;
     }
     appendLog("Auditioning browser Csound engine test tone.");
-    await csound.inputMessage("i 900 0 1.25 440 0.18");
-    await csound.inputMessage("i 900 0.08 1.15 660 0.12");
-    await csound.inputMessage("i 900 0.16 1.05 880 0.09");
+    await csound.inputMessage("i 900 0 1.25 440 0.28");
+    await csound.inputMessage("i 900 0.08 1.15 660 0.18");
+    await csound.inputMessage("i 900 0.16 1.05 880 0.14");
+    const ctx = await csound.getAudioContext();
+    if (ctx) {
+      await ctx.resume().catch(() => {});
+      appendLog(
+        `After engine audition: AudioContext "${ctx.state}", ${ctx.sampleRate} Hz — if still silent, use Resume Csound output or Host tone (not Csound).`,
+      );
+    }
   }
 
-  async function testBrowserTone() {
-    const context = audioContextRef.current ?? new AudioContext({ latencyHint: "interactive" });
-    await applyAudioOutput(context, selectedAudioOutputId);
-    await context.resume();
-    const osc = context.createOscillator();
-    const gain = context.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 440;
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.45);
-    osc.connect(gain).connect(context.destination);
-    osc.start();
-    osc.stop(context.currentTime + 0.5);
-    appendLog("Played browser test tone.");
-    if (!audioContextRef.current) {
-      window.setTimeout(() => void context.close(), 650);
+  /**
+   * Does not use Csound. Uses a **fresh** AudioContext so we can tell:
+   * - silent here ⇒ browser/tab/system output path (mute, wrong sink), not the Csound graph
+   * - audible here but no Csound ⇒ WASM / Csound wiring
+   */
+  async function testHostOnlyOutputTone() {
+    const ephemeral = new AudioContext({ latencyHint: "interactive" });
+    try {
+      await ephemeral.resume();
+      await applyAudioOutput(ephemeral, selectedAudioOutputId);
+      await ephemeral.resume().catch(() => {});
+
+      const t = ephemeral.currentTime + 0.06;
+      const osc = ephemeral.createOscillator();
+      const gain = ephemeral.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.12, t + 0.05);
+      gain.gain.linearRampToValueAtTime(0.0001, t + 0.42);
+      osc.connect(gain);
+      gain.connect(ephemeral.destination);
+      osc.start(t);
+      osc.stop(t + 0.45);
+
+      const withSink = ephemeral as AudioContext & { sinkId?: string };
+      appendLog(
+        `Host-only beep: ephemeral AudioContext (not Csound) state="${ephemeral.state}" ${ephemeral.sampleRate} Hz · sinkId=${withSink.sinkId ?? "n/a"} — check tab/site mute & speaker output if still silent.`,
+      );
+      window.setTimeout(() => {
+        void ephemeral.close().catch(() => {});
+      }, 600);
+    } catch (error) {
+      appendLog(`Host-only beep failed: ${error instanceof Error ? error.message : String(error)}`);
+      void ephemeral.close().catch(() => {});
+    }
+  }
+
+  async function resumeCsoundOutput() {
+    let ctx = audioContextRef.current;
+    const cs = csoundRef.current;
+    if (!ctx && cs) {
+      try {
+        ctx = (await cs.getAudioContext()) ?? null;
+      } catch {
+        ctx = null;
+      }
+    }
+    if (!ctx) {
+      appendLog("Resume Csound output: no engine yet — click Start Audio first.");
+      return;
+    }
+    audioContextRef.current = ctx;
+    await applyAudioOutput(ctx, selectedAudioOutputId);
+    await ctx.resume().catch(() => {});
+    if (cs) {
+      await rewireCsoundAfterStart(cs, appendLog, { concertMeter: true, logLabel: "Csound V12" });
+    }
+    appendLog(`Resume Csound output: graph state is "${ctx.state}" (want "running").`);
+    if (ctx.state !== "running") {
+      appendLog("Check browser tab/site mute, system volume, and click Resume again after interacting with the page.");
     }
   }
 
@@ -710,20 +852,50 @@ export function CsoundV12Renderer({
       <div className="grid gap-3 md:grid-cols-[1fr_auto]">
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={status === "running" ? "emerald" : status === "error" ? "rose" : "neutral"} dot>
+            <Badge data-testid="v12-csound-status" tone={status === "running" ? "emerald" : status === "error" ? "rose" : "neutral"} dot>
               Csound WASM {status}
             </Badge>
-            <Badge tone="indigo">WebAudio</Badge>
+            <Badge tone="indigo">Csound · browser</Badge>
             <Badge tone="amber">Browser EEG bridge</Badge>
           </div>
           <p className="mt-2 text-xs leading-5 text-zinc-400">
-            Compiles a browser-safe V12-inspired orchestra, replaces desktop OSC with WebAudio
-            control channels, streams NeuroVis Muse values into Csound, and uses virtual or USB
+            Compiles a browser-safe V12-inspired orchestra, replaces desktop OSC with NeuroVis
+            control channels in Csound, streams Muse values into the orchestra, and uses virtual or USB
             MIDI notes to trigger the chord instrument.
           </p>
+          <ul className="mt-2 list-inside list-disc space-y-1 text-xs leading-5 text-zinc-500">
+            <li>
+              <span className="text-zinc-300">Still silent after Start?</span> Click{" "}
+              <strong>Resume Csound output</strong> (the browser may hold Csound’s output graph{" "}
+              <span className="font-mono text-zinc-400">suspended</span> until a gesture). NeuroVis disables React Strict
+              Mode so dev builds do not tear down Csound right after Start.
+            </li>
+            <li>
+              <span className="text-zinc-300">Hear something:</span> click <strong>Start Audio</strong> and wait
+              until the badge is <strong>running</strong> (not compiled).{" "}
+              <strong>Host tone (not Csound)</strong> uses a <strong>fresh</strong> AudioContext (bypasses Csound’s graph)
+              to test the browser speaker path;{" "}
+              <strong>Audition Csound Engine</strong> and <strong>Audition V12 MIDI Chord</strong> verify Csound.
+            </li>
+            <li>
+              <span className="text-zinc-300">Layered play:</span> the <strong>Auto bass + melody bed</strong> runs from
+              the matrix drivers; hold <strong>Virtual MIDI</strong> or USB keys to add the thick pad on top. Mute the
+              bed in Mix if you want <strong>MIDI-only</strong> silence.
+            </li>
+            <li>
+              <span className="text-zinc-300">Chord progression bed:</span> with{" "}
+              <strong>Auto bass + melody bed</strong> on (Mix card), an eight-step <strong>bass</strong> plus{" "}
+              <strong>melody</strong> line runs automatically — <strong>no MIDI required</strong>. Keys{" "}
+              <strong>1–9, 0</strong> change the <strong>key center</strong>; US <strong>Shift+digit</strong> (
+              <kbd>!</kbd> through <kbd>)</kbd>) maps to the same ten palettes. Matrix <strong>Bass / Melody / Rhythm</strong>{" "}
+              columns pick which EEG bands wobble bass pitch, melody pitch, and step rate. Hold MIDI keys to layer the pad. Full
+              V12 composition is still in the desktop <strong>CSD</strong>.
+            </li>
+          </ul>
         </div>
         <div className="flex items-center gap-2">
           <Button
+            data-testid="v12-start-audio"
             onClick={start}
             disabled={status === "loading" || status === "running" || status === "compiled"}
             leftIcon={<Power className="h-4 w-4" />}
@@ -732,8 +904,8 @@ export function CsoundV12Renderer({
           </Button>
           <Button
             variant="outline"
-            onClick={stop}
-            disabled={!csoundRef.current}
+            onClick={() => void stop()}
+            disabled={status !== "loading" && status !== "running" && status !== "compiled"}
             leftIcon={<Square className="h-4 w-4" />}
           >
             Stop
@@ -773,6 +945,24 @@ export function CsoundV12Renderer({
             step={1}
             onChange={setChordRange}
             format={(v) => String(Math.round(v))}
+          />
+          <label className="flex items-center justify-between gap-3 text-sm text-zinc-300">
+            Auto bass + melody bed (palette drives key)
+            <input
+              type="checkbox"
+              checked={arrangementBedOn}
+              onChange={(e) => setArrangementBedOn(e.target.checked)}
+              className="h-4 w-4 accent-emerald-500"
+            />
+          </label>
+          <Slider
+            label="Arrangement bed level"
+            value={arrangementMix}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={setArrangementMix}
+            format={(v) => v.toFixed(2)}
           />
           <label className="block space-y-1.5">
             <span className="text-xs text-zinc-400">EEG orchestra</span>
@@ -827,8 +1017,17 @@ export function CsoundV12Renderer({
             </select>
           </label>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={testBrowserTone}>
-              Test Output Tone
+            <Button
+              size="sm"
+              variant="outline"
+              type="button"
+              title="Browser Oscillator only — does not run through Csound"
+              onClick={testHostOnlyOutputTone}
+            >
+              Host tone (not Csound)
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void resumeCsoundOutput()}>
+              Resume Csound output
             </Button>
             <Badge
               tone={
@@ -854,7 +1053,7 @@ export function CsoundV12Renderer({
               <button
                 key={note}
                 className="touch-none rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-4 font-mono text-xs text-zinc-100 hover:border-emerald-500 hover:bg-emerald-500/10 disabled:opacity-40"
-                disabled={!csoundRef.current}
+                disabled={!audioReady}
                 onMouseDown={() => void noteOn(note)}
                 onMouseUp={() => void noteOff(note)}
                 onMouseLeave={() => heldNotes.has(note) && void noteOff(note)}
@@ -872,10 +1071,16 @@ export function CsoundV12Renderer({
           <Button size="sm" variant="outline" onClick={stopAllNotes} disabled={!heldNotes.size}>
             Stop held notes
           </Button>
-          <Button size="sm" variant="outline" onClick={auditionCsoundEngine} disabled={!csoundRef.current}>
+          <Button
+            data-testid="v12-audition-csound-engine"
+            size="sm"
+            variant="outline"
+            onClick={auditionCsoundEngine}
+            disabled={!audioReady}
+          >
             Audition Csound Engine
           </Button>
-          <Button size="sm" onClick={auditionCsoundChord} disabled={!csoundRef.current}>
+          <Button size="sm" onClick={auditionCsoundChord} disabled={!audioReady}>
             Audition V12 MIDI Chord
           </Button>
         </div>
@@ -886,38 +1091,58 @@ export function CsoundV12Renderer({
               <Music2 className="h-4 w-4 text-emerald-400" />
               Launchkey Mini MK4-style Controller
             </div>
-            <Badge tone="indigo">25 keys + CC21-28</Badge>
+            <Badge tone="indigo">25 keys · CC21–24 / CC25–28 · CC1 mod strip</Badge>
           </div>
-          <div className="grid gap-3 xl:grid-cols-[76px_1fr]">
-            <div className="grid grid-cols-2 gap-2 rounded-xl border border-zinc-800 bg-zinc-950/70 p-2 xl:grid-cols-1">
-              <VerticalControl
-                label="PB"
-                value={pitchBendValue}
-                min={-1}
-                max={1}
-                step={0.01}
-                center
-                onChange={(value) => void setVirtualPitchBend(value)}
-              />
-              <VerticalControl
-                label="CC1"
-                value={cc1Value}
-                min={0}
-                max={1}
-                step={0.01}
-                onChange={(value) => void setVirtualCc1(value)}
-              />
+          <div className="grid gap-3 xl:grid-cols-[auto_minmax(0,1fr)]">
+            <div className="flex flex-col gap-3">
+              <div className="flex justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 px-2 py-3">
+                <VerticalControl
+                  label="PB"
+                  value={pitchBendValue}
+                  min={-1}
+                  max={1}
+                  step={0.01}
+                  center
+                  onChange={(value) => void setVirtualPitchBend(value)}
+                />
+              </div>
+              <div className="flex flex-col items-center rounded-xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
+                <span className="mb-1 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+                  Mod wheel
+                </span>
+                <VerticalControl
+                  label="CC1"
+                  value={cc1Value}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  size="large"
+                  onChange={(value) => void setVirtualCc1(value)}
+                />
+              </div>
             </div>
             <div className="space-y-3">
-              <div className="grid grid-cols-4 gap-1.5">
-                {LAUNCHKEY_CC_NUMBERS.map((cc) => (
-                  <VirtualKnob
-                    key={cc}
-                    cc={cc}
-                    value={launchkeyCcs[cc] ?? 0}
-                    onChange={(value) => void setVirtualCc(cc, value)}
-                  />
-                ))}
+              <div className="space-y-2">
+                <div className="grid grid-cols-4 gap-1.5">
+                  {LAUNCHKEY_CC_ROW_TOP.map((cc) => (
+                    <VirtualKnob
+                      key={cc}
+                      cc={cc}
+                      value={launchkeyCcs[cc] ?? 0}
+                      onChange={(value) => void setVirtualCc(cc, value)}
+                    />
+                  ))}
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {LAUNCHKEY_CC_ROW_BOTTOM.map((cc) => (
+                    <VirtualKnob
+                      key={cc}
+                      cc={cc}
+                      value={launchkeyCcs[cc] ?? 0}
+                      onChange={(value) => void setVirtualCc(cc, value)}
+                    />
+                  ))}
+                </div>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1.5">
                 <div className="font-mono text-[11px] text-zinc-400">
@@ -946,7 +1171,7 @@ export function CsoundV12Renderer({
               </div>
               <MiniKeyboard
                 startNote={launchkeyStartNote}
-                disabled={!csoundRef.current}
+                disabled={!audioReady}
                 heldNotes={heldNotes}
                 onNoteOn={(note) => void noteOn(note)}
                 onNoteOff={(note) => void noteOff(note)}
@@ -1027,21 +1252,22 @@ export function CsoundV12Renderer({
             />
           </label>
           <p className="text-xs leading-5 text-zinc-500">
-            Browser audio starts only after a user click. If Chrome blocks audio, press Stop and
-            Start Audio again. By default, Csound stays silent until MIDI or a hold-test button.
+            Browser audio starts only after a user click. If Chrome blocks audio, press Stop and Start Audio again. By
+            default, the <strong>auto bass + melody bed</strong> plays when the bed toggle is on; turn it off in Mix for
+            silent idle until MIDI.
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={holdTestNote} disabled={!csoundRef.current}>
+            <Button size="sm" variant="outline" onClick={holdTestNote} disabled={!audioReady}>
               Hold Test Note
             </Button>
-            <Button size="sm" variant="outline" onClick={holdTestChord} disabled={!csoundRef.current}>
+            <Button size="sm" variant="outline" onClick={holdTestChord} disabled={!audioReady}>
               Hold Test Chord
             </Button>
-            <Button size="sm" variant="outline" onClick={() => void releaseHeldTest()} disabled={!csoundRef.current}>
+            <Button size="sm" variant="outline" onClick={() => void releaseHeldTest()} disabled={!audioReady}>
               Release Hold
             </Button>
           </div>
-          <Button size="sm" variant="danger" onClick={panicReset} disabled={!csoundRef.current}>
+          <Button size="sm" variant="danger" onClick={panicReset} disabled={!audioReady}>
             Panic / Reset Audio
           </Button>
         </div>
@@ -1106,7 +1332,7 @@ export function CsoundV12Renderer({
         </p>
       </div>
 
-      <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+      <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3" data-testid="v12-csound-console-panel">
         <div className="mb-2 flex items-center justify-between">
           <div className="text-xs font-medium uppercase tracking-wide text-zinc-400">
             Csound Console
@@ -1115,7 +1341,10 @@ export function CsoundV12Renderer({
             Clear
           </Button>
         </div>
-        <pre className="h-56 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-zinc-400">
+        <pre
+          data-testid="v12-csound-console"
+          className="h-56 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-zinc-400"
+        >
           {logs.length ? logs.join("\n") : "Csound messages will appear here after Start Audio."}
         </pre>
       </div>
@@ -1123,244 +1352,14 @@ export function CsoundV12Renderer({
   );
 }
 
-function VirtualKnob({
-  cc,
-  value,
-  onChange,
-}: {
-  cc: number;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const angle = -135 + value * 270;
-  return (
-    <label className="flex flex-col items-center gap-0.5 rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5">
-      <span className="font-mono text-[10px] text-zinc-400">CC{cc}</span>
-      <span
-        className="relative h-8 w-8 rounded-full border border-zinc-700 bg-zinc-900 shadow-inner"
-        style={{
-          background: `conic-gradient(from 225deg, rgb(16 185 129) ${value * 270}deg, rgb(39 39 42) 0deg)`,
-        }}
-      >
-        <span
-          className="absolute left-1/2 top-1/2 h-3 w-0.5 origin-bottom rounded bg-zinc-100"
-          style={{
-            transform: `translate(-50%, -100%) rotate(${angle}deg)`,
-          }}
-        />
-      </span>
-      <input
-        aria-label={`CC ${cc}`}
-        type="range"
-        min={0}
-        max={1}
-        step={0.01}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="w-full accent-emerald-500"
-      />
-      <span className="font-mono text-[10px] text-zinc-500">{Math.round(value * 127)}</span>
-    </label>
-  );
-}
-
-function VerticalControl({
-  label,
-  value,
-  min,
-  max,
-  step,
-  center,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  center?: boolean;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="flex items-center gap-1 xl:flex-col">
-      <span className="w-8 text-center font-mono text-[10px] text-zinc-400">{label}</span>
-      <input
-        aria-label={label}
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        onDoubleClick={() => center && onChange(0)}
-        className="h-16 w-7 -rotate-90 accent-emerald-500 xl:h-20"
-      />
-      <span className="w-8 text-right font-mono text-[10px] text-zinc-500">
-        {center ? value.toFixed(2) : Math.round(value * 127)}
-      </span>
-    </label>
-  );
-}
-
-function MiniKeyboard({
-  startNote,
-  disabled,
-  heldNotes,
-  onNoteOn,
-  onNoteOff,
-}: {
-  startNote: number;
-  disabled: boolean;
-  heldNotes: Set<number>;
-  onNoteOn: (note: number) => void;
-  onNoteOff: (note: number) => void;
-}) {
-  const [asciiActive, setAsciiActive] = React.useState(false);
-  const asciiHeldRef = React.useRef<Map<string, number>>(new Map());
-  const keys = Array.from({ length: LAUNCHKEY_KEY_COUNT }, (_, index) => startNote + index);
-  const blackOffsets = new Set([1, 3, 6, 8, 10]);
-  const whiteKeys = keys.filter((note) => !blackOffsets.has(note % 12));
-  const blackKeys = keys.filter((note) => blackOffsets.has(note % 12));
-  const asciiLabels = React.useMemo(() => {
-    const labels = new Map<number, string>();
-    Object.entries(ASCII_KEYBOARD_OFFSETS).forEach(([key, offset]) => {
-      labels.set(startNote + offset, key === " " ? "Space" : key.toUpperCase());
-    });
-    return labels;
-  }, [startNote]);
-  const releaseAsciiHeldNotes = React.useCallback(() => {
-    for (const note of asciiHeldRef.current.values()) {
-      onNoteOff(note);
-    }
-    asciiHeldRef.current.clear();
-  }, [onNoteOff]);
-
-  React.useEffect(() => {
-    if (!asciiActive || disabled) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) return;
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-      const offset = ASCII_KEYBOARD_OFFSETS[event.key.toLowerCase()];
-      if (offset === undefined) return;
-      const note = startNote + offset;
-      if (note > startNote + LAUNCHKEY_KEY_COUNT - 1) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const key = event.key.toLowerCase();
-      if (asciiHeldRef.current.has(key)) return;
-      asciiHeldRef.current.set(key, note);
-      onNoteOn(note);
-    };
-    const onKeyUp = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
-      const note = asciiHeldRef.current.get(key);
-      if (note === undefined) return;
-      event.preventDefault();
-      event.stopPropagation();
-      asciiHeldRef.current.delete(key);
-      onNoteOff(note);
-    };
-    const onWindowBlur = () => releaseAsciiHeldNotes();
-    const onVisibilityChange = () => {
-      if (document.visibilityState !== "visible") {
-        releaseAsciiHeldNotes();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown, { capture: true });
-    window.addEventListener("keyup", onKeyUp, { capture: true });
-    window.addEventListener("blur", onWindowBlur);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      releaseAsciiHeldNotes();
-      window.removeEventListener("keydown", onKeyDown, { capture: true });
-      window.removeEventListener("keyup", onKeyUp, { capture: true });
-      window.removeEventListener("blur", onWindowBlur);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [asciiActive, disabled, onNoteOff, onNoteOn, releaseAsciiHeldNotes, startNote]);
-
-  return (
-    <div
-      className={[
-        "rounded-xl border bg-zinc-950/70 p-2 transition",
-        asciiActive ? "border-emerald-500/70 shadow-[0_0_28px_-18px_rgba(16,185,129,.95)]" : "border-zinc-800",
-      ].join(" ")}
-      onMouseEnter={() => setAsciiActive(true)}
-      onMouseLeave={() => setAsciiActive(false)}
-      onFocus={() => setAsciiActive(true)}
-      onBlur={() => setAsciiActive(false)}
-      tabIndex={0}
-    >
-      <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
-        <span className="text-zinc-500">Hover/focus here for ASCII keyboard notes</span>
-        <span className={asciiActive ? "text-emerald-300" : "text-zinc-600"}>
-          {asciiActive ? "ASCII notes active" : "ASCII shortcuts active"}
-        </span>
-      </div>
-      <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/80 p-2">
-        <div className="relative h-36 w-full sm:h-40">
-          <div className="absolute inset-x-0 bottom-0 flex h-full gap-0.5">
-            {whiteKeys.map((note) => {
-              const held = heldNotes.has(note);
-              return (
-                <button
-                  key={note}
-                  disabled={disabled}
-                  className={[
-                    "touch-none flex min-w-0 flex-1 flex-col justify-end rounded-b-md border border-zinc-500 bg-zinc-100 px-0.5 pb-2 text-center font-mono text-[9px] text-zinc-900 transition hover:bg-emerald-100 disabled:opacity-35 sm:text-[10px]",
-                    held ? "border-emerald-400 bg-emerald-300 text-zinc-950 shadow-[0_0_20px_-8px_rgba(16,185,129,.95)]" : "",
-                  ].join(" ")}
-                  onMouseDown={() => onNoteOn(note)}
-                  onMouseUp={() => onNoteOff(note)}
-                  onMouseLeave={() => held && onNoteOff(note)}
-                  onTouchStart={() => onNoteOn(note)}
-                  onTouchEnd={() => onNoteOff(note)}
-                  title={midiNoteName(note)}
-                >
-                  <span>{midiNoteName(note)}</span>
-                  {asciiLabels.has(note) && (
-                    <span className="mt-1 rounded bg-zinc-300/80 px-1 text-[8px] text-zinc-700">
-                      {asciiLabels.get(note)}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          {blackKeys.map((note) => {
-            const precedingWhiteIndex = whiteKeys.filter((whiteNote) => whiteNote < note).length - 1;
-            const leftPct = ((precedingWhiteIndex + 0.92) / whiteKeys.length) * 100;
-          const held = heldNotes.has(note);
-          return (
-            <button
-              key={note}
-              disabled={disabled}
-              className={[
-                "absolute top-0 z-10 touch-none flex h-24 -translate-x-1/2 flex-col items-center justify-end rounded-b-md border border-zinc-950 bg-zinc-950 pb-2 font-mono text-[8px] text-zinc-500 shadow-lg transition hover:bg-zinc-800 disabled:opacity-35 sm:h-28 sm:text-[9px]",
-                held ? "border-emerald-400 bg-emerald-300 text-zinc-950 shadow-[0_0_20px_-8px_rgba(16,185,129,.95)]" : "",
-              ].join(" ")}
-              style={{
-                left: `${leftPct}%`,
-                width: `min(34px, ${Math.max(4.2, 58 / whiteKeys.length)}%)`,
-              }}
-              onMouseDown={() => onNoteOn(note)}
-              onMouseUp={() => onNoteOff(note)}
-              onMouseLeave={() => held && onNoteOff(note)}
-              onTouchStart={() => onNoteOn(note)}
-              onTouchEnd={() => onNoteOff(note)}
-              title={midiNoteName(note)}
-            >
-              <span className="sr-only">{midiNoteName(note)}</span>
-              {asciiLabels.has(note) && <span>{asciiLabels.get(note)}</span>}
-            </button>
-          );
-        })}
-        </div>
-      </div>
-    </div>
-  );
+/** Palette 0-9 → baseline semitone transpose; chord range 1-12 scales spread (browser pad + arrangement bed). */
+function progRootSemi(palette: number, chordRange: number): number {
+  const bases = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16];
+  const pal = Math.max(0, Math.min(9, Math.round(palette)));
+  const base = bases[pal] ?? 0;
+  const cr = Math.max(1, Math.min(12, chordRange));
+  const scale = 0.5 + (cr / 12) * 0.85;
+  return base * scale;
 }
 
 async function syncControls(
@@ -1373,6 +1372,8 @@ async function syncControls(
     orchestraModel: number;
     soundPreset: number;
     melodyOn: boolean;
+    arrangementBedOn: boolean;
+    arrangementMix: number;
     printDashboard: boolean;
     sensorGains: Record<SensorStreamId, number>;
   },
@@ -1380,6 +1381,7 @@ async function syncControls(
   await Promise.all([
     csound.setControlChannel("nv_web_active", 1),
     csound.setControlChannel("nv_palette", controls.palette),
+    csound.setControlChannel("nv_prog_root_semi", progRootSemi(controls.palette, local.chordRange)),
     csound.setControlChannel("nv_harmony_band", BAND_INDEX[controls.harmonyBand]),
     csound.setControlChannel("nv_bass_driver", BAND_INDEX[controls.bassDriver]),
     csound.setControlChannel("nv_melody_driver", BAND_INDEX[controls.melodyDriver]),
@@ -1397,6 +1399,8 @@ async function syncControls(
     csound.setControlChannel("nv_orchestra_model", local.orchestraModel),
     csound.setControlChannel("nv_sound_preset", local.soundPreset),
     csound.setControlChannel("nv_melody_on", local.melodyOn ? 1 : 0),
+    csound.setControlChannel("nv_arrangement_on", local.arrangementBedOn ? 1 : 0),
+    csound.setControlChannel("nv_arrangement_mix", Math.max(0, Math.min(1, local.arrangementMix))),
     csound.setControlChannel("nv_print_toggle", local.printDashboard ? 1 : 0),
     csound.setControlChannel("nv_stream_raw", local.sensorGains.raw),
     csound.setControlChannel("nv_stream_bands", local.sensorGains.bands),
@@ -1417,12 +1421,23 @@ async function sendCcDefaults(
       "nv_cc1_value",
       controls.cc1Mode === "volume" ? controls.melodyVolume : controls.melodyComplexity,
     ),
+    csound.setControlChannel("nv_pitch_bend", 0),
     csound.setControlChannel("nv_chord_range", local.chordRange),
     csound.setControlChannel("nv_metro_scale", local.metroScale),
     csound.setControlChannel("nv_global_volume", local.globalVolume),
   ]);
 }
 
+/** Seed Launchkey CC channels once at Csound start (not on every controls sync — avoids wiping live MIDI). */
+async function primeBrowserMidiCcChannels(csound: CsoundObj) {
+  await Promise.all(
+    LAUNCHKEY_CC_NUMBERS.map((cc) =>
+      csound.setControlChannel(`nv_cc${cc}_value`, cc === 28 ? 1 : 0),
+    ),
+  );
+}
+
+/** Finite instr 901 events: stacked partials per chord tone (orchestra model selects voicing). */
 async function playBrowserNote(
   csound: CsoundObj,
   note: number,
@@ -1481,13 +1496,6 @@ async function releaseAllSustainedNotes(csound: CsoundObj, activeNotes: Set<numb
 
 function sustainInstrumentForNote(note: number) {
   return MIDI_SUSTAIN_INSTR_BASE + clamp(Math.round(note), 0, 127);
-}
-
-function midiNoteName(note: number) {
-  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  const pitch = names[((note % 12) + 12) % 12];
-  const octave = Math.floor(note / 12) - 1;
-  return `${pitch}${octave}`;
 }
 
 function getOrchestraVoicing(orchestraModel: number) {
@@ -1610,9 +1618,10 @@ function hasFunction<T extends keyof RuntimeCsound>(
   return typeof (csound as RuntimeCsound)[name] === "function";
 }
 
-function browserNeuroVisOrc() {
+function browserNeuroVisOrc(sr = 48000) {
+  const srN = Math.max(8000, Math.min(192000, Math.round(sr)));
   return `
-sr = 44100
+sr = ${srN}
 ksmps = 32
 nchnls = 2
 0dbfs = 1
@@ -1646,8 +1655,8 @@ instr 900 ; Browser Csound engine smoke test
   iFreq = p4
   iAmp = p5
   aEnv linsegr 0, 0.02, 1, p3 - 0.05, 0.7, 0.03, 0
-  aTone poscil iAmp * aEnv, iFreq
-  aTone = aTone + poscil(iAmp * 0.35 * aEnv, iFreq * 2.01)
+  aTone oscili iAmp * aEnv, iFreq
+  aTone = aTone + oscili(iAmp * 0.35 * aEnv, iFreq * 2.01)
   outs aTone, aTone
 endin
 
@@ -1663,7 +1672,13 @@ instr 901, ${sustainInstrumentList()} ; Browser Csound finite and true MIDI-gate
   kCc22 chnget "nv_cc22_value"
   kCc23 chnget "nv_cc23_value"
   kCc24 chnget "nv_cc24_value"
+  kCc25 chnget "nv_cc25_value"
+  kCc26 chnget "nv_cc26_value"
+  kCc27 chnget "nv_cc27_value"
+  kCc28 chnget "nv_cc28_value"
   kMetro chnget "nv_metro_scale"
+  kProgRoot chnget "nv_prog_root_semi"
+  kHarmBand chnget "nv_harmony_band"
   kRawGain chnget "nv_stream_raw"
   kBandGain chnget "nv_stream_bands"
   kAccelGain chnget "nv_stream_accel"
@@ -1687,9 +1702,24 @@ instr 901, ${sustainInstrumentList()} ; Browser Csound finite and true MIDI-gate
   kGammaN = limit((kGamma + 2.5) / 4, 0, 1)
   kThetaN = limit((kTheta + 2.5) / 4, 0, 1)
   kDeltaN = limit((kDelta + 2.5) / 4, 0, 1)
+  kHarmDrv = kAlphaN
+  kH = limit(int(kHarmBand + 0.5), 0, 4)
+  if (kH == 0) then
+    kHarmDrv = kDeltaN
+  elseif (kH == 1) then
+    kHarmDrv = kThetaN
+  elseif (kH == 2) then
+    kHarmDrv = kAlphaN
+  elseif (kH == 3) then
+    kHarmDrv = kBetaN
+  else
+    kHarmDrv = kGammaN
+  endif
+  kEegHarmNudge = (kHarmDrv - 0.48) * 5.5 * (0.35 + kBandGain * 0.65)
+  kTranspose = kProgRoot + limit(kEegHarmNudge, -4, 4)
   aEnv linsegr 0, 0.025, 1, max(0.05, p3 - 0.65), 0.62, 0.62, 0
-  kBright = 0.45 + kBetaN * 0.45 + kCc1 * 0.25 + kCc23 * 0.45
-  kWide = 0.45 + kGammaN * 0.4 + kCc24 * 0.35
+  kBright = 0.45 + kBetaN * 0.62 + kCc1 * 0.25 + kCc23 * 0.45
+  kWide = 0.45 + kGammaN * 0.55 + kCc24 * 0.35 + kCc27 * 0.30
   kSubMix = 0.04
   kPitchDrift = 0
   kPulseDepth = 0.08
@@ -1733,23 +1763,138 @@ instr 901, ${sustainInstrumentList()} ; Browser Csound finite and true MIDI-gate
     kModelOct = 1.35
     kWide = kWide + 0.25
   endif
-  kPlayVol = kVol * (0.55 + kCc1 * 0.75) * (0.55 + kCc21 * 0.70)
+  kPitchDrift = kPitchDrift + ((kAlphaN - 0.5) * 5.2 + (kBetaN - 0.5) * 4.0 + (kThetaN - 0.5) * 2.8) * (0.4 + kBandGain * 0.6)
+  kPulseDepth = limit(kPulseDepth + abs(kThetaN - 0.5) * 0.14 * kBandGain + abs(kBetaN - 0.5) * 0.1 * kBandGain, 0.02, 0.52)
+  kPlayVol = kVol * (0.55 + kCc1 * 0.75) * (0.55 + kCc21 * 0.70) * limit(0.02 + kCc28 * 0.98, 0, 1)
+  kArpPhase init 0
+  kArpHz = 0.001 + (1.1 + kMetro * 3.8 + kCc26 * 5.5) * limit(kCc25, 0, 1)
+  kArpPhase = kArpPhase + kArpHz / kr
+  kArpPhase = kArpPhase - int(kArpPhase)
+  kArpStep = int(kArpPhase * 4)
+  kArpSemi = 0
+  if (kArpStep == 1) then
+    kArpSemi = 4
+  elseif (kArpStep == 2) then
+    kArpSemi = 7
+  elseif (kArpStep == 3) then
+    kArpSemi = 12
+  endif
+  kArpMix = kCc25 * (0.09 + kMetro * 0.14 + kCc22 * 0.05)
   kMetroLfo lfo 0.5, 0.6 + kMetro * 2.4 + kCc22 * 3.0, 0
-  kPulse = 1 - kPulseDepth + kPulseDepth * (0.5 + kMetroLfo)
-  kFreq = cpsmidinn(iNote + kPitchBend * 2) + kPitchDrift
+  kPulse = 1 - kPulseDepth + kPulseDepth * (0.5 + kMetroLfo * 1.45)
+  kFreq = cpsmidinn(iNote + kPitchBend * 2 + kTranspose) + kPitchDrift
   aFund poscil iAmp * aEnv * kPlayVol * kPulse * kModelGain * 0.70, kFreq
   aFifth poscil iAmp * aEnv * kPlayVol * kPulse * (0.08 + kBright * 0.18) * kModelFifth, kFreq * 1.5
   aOct poscil iAmp * aEnv * kPlayVol * kPulse * (0.04 + kGammaN * 0.16) * kModelOct, kFreq * 2.01
   aSub poscil iAmp * aEnv * kPlayVol * kPulse * kSubMix, kFreq * 0.5
-  aTone = aFund + aFifth + aOct + aSub
+  aArp poscil iAmp * aEnv * kPlayVol * kPulse * kArpMix, cpsmidinn(iNote + kPitchBend * 2 + kTranspose + kArpSemi) + kPitchDrift
+  aTone = aFund + aFifth + aOct + aSub + aArp
   aTone tone aTone, 900 + kBright * 5200
   aDelay delay aTone, 0.024
-  kPan = limit(0.5 + (iVoice - 2) * 0.075 + (kWide - 0.5) * 0.18, 0.05, 0.95)
-  aPanL, aPanR pan2 aTone, kPan
-  aL = aPanL * (0.90 + kWide * 0.08) + aDelay * (0.08 + kWide * 0.18)
-  aR = aPanR * (0.90 + kWide * 0.08) + aDelay * (0.12 + kWide * 0.22)
+  kPos = limit(0.5 + (iVoice - 2) * 0.075 + (kWide - 0.5) * 0.18, 0.05, 0.95)
+  aWL, aWR pan2 aTone, kPos
+  aL = aWL * (0.90 + kWide * 0.08) + aDelay * (0.08 + kWide * 0.18)
+  aR = aWR * (0.90 + kWide * 0.08) + aDelay * (0.12 + kWide * 0.22)
   aRevL, aRevR reverbsc aL, aR, 0.82, 11000
   outs (aL * 0.72) + (aRevL * 0.28), (aR * 0.72) + (aRevR * 0.28)
+endin
+
+instr 908 ; Auto bass + melody bed — chord degree cycles, follows palette root + matrix drivers
+  kArr chnget "nv_arrangement_on"
+  kVol chnget "nv_global_volume"
+  kMix chnget "nv_arrangement_mix"
+  kRoot chnget "nv_prog_root_semi"
+  kMetro chnget "nv_metro_scale"
+  kMelW chnget "nv_melody_volume"
+  kBandGain chnget "nv_stream_bands"
+  kBD chnget "nv_bass_driver"
+  kMD chnget "nv_melody_driver"
+  kRD chnget "nv_rhythm_driver"
+  kDelta chnget "nv_delta_1"
+  kTheta chnget "nv_theta_1"
+  kAlpha chnget "nv_alpha_1"
+  kBeta chnget "nv_beta_1"
+  kGamma chnget "nv_gamma_1"
+  kAlphaN = limit((kAlpha + 2.5) / 4, 0, 1)
+  kBetaN = limit((kBeta + 2.5) / 4, 0, 1)
+  kGammaN = limit((kGamma + 2.5) / 4, 0, 1)
+  kThetaN = limit((kTheta + 2.5) / 4, 0, 1)
+  kDeltaN = limit((kDelta + 2.5) / 4, 0, 1)
+  kBdrv = kDeltaN
+  khB = limit(int(kBD + 0.5), 0, 4)
+  if (khB == 1) then
+    kBdrv = kThetaN
+  elseif (khB == 2) then
+    kBdrv = kAlphaN
+  elseif (khB == 3) then
+    kBdrv = kBetaN
+  elseif (khB == 4) then
+    kBdrv = kGammaN
+  endif
+  kMdrv = kDeltaN
+  khM = limit(int(kMD + 0.5), 0, 4)
+  if (khM == 1) then
+    kMdrv = kThetaN
+  elseif (khM == 2) then
+    kMdrv = kAlphaN
+  elseif (khM == 3) then
+    kMdrv = kBetaN
+  elseif (khM == 4) then
+    kMdrv = kGammaN
+  endif
+  kRdrv = kDeltaN
+  khR = limit(int(kRD + 0.5), 0, 4)
+  if (khR == 1) then
+    kRdrv = kThetaN
+  elseif (khR == 2) then
+    kRdrv = kAlphaN
+  elseif (khR == 3) then
+    kRdrv = kBetaN
+  elseif (khR == 4) then
+    kRdrv = kGammaN
+  endif
+  kRate = 0.095 + kMetro * 0.30 + kRdrv * 0.24
+  kAccum init 0
+  kAccum = kAccum + kRate / kr
+wrapx:
+  if (kAccum < 8) goto wrapok
+  kAccum = kAccum - 8
+  goto wrapx
+wrapok:
+  kI = int(kAccum)
+  kDeg = 0
+  if (kI == 1) then
+    kDeg = 7
+  elseif (kI == 2) then
+    kDeg = 5
+  elseif (kI == 3) then
+    kDeg = 9
+  elseif (kI == 4) then
+    kDeg = 7
+  elseif (kI == 5) then
+    kDeg = 0
+  elseif (kI == 6) then
+    kDeg = 4
+  elseif (kI == 7) then
+    kDeg = 5
+  endif
+  kHop = int(kI - int(kI / 3) * 3) * 2
+  kBassMidi = limit(32 + kRoot + kDeg + (kBdrv - 0.48) * 9 * kBandGain, 24, 58)
+  kMelMidi = limit(62 + kRoot + kDeg + kHop + (kMdrv - 0.50) * 8 * kBandGain, 52, 96)
+  kGate = 0
+  if (kArr > 0.5) then
+    kGate = 1
+  endif
+  kBedDrive = limit(0.22 + kBandGain * 0.78, 0, 1)
+  kbAss = 0.12 * kVol * kMix * kBedDrive * kGate
+  kMel = 0.075 * kVol * kMix * kMelW * kBedDrive * kGate
+  aB poscil kbAss, cpsmidinn(kBassMidi)
+  aB tone aB, 380 + kBdrv * 320
+  aM poscil kMel, cpsmidinn(kMelMidi)
+  aM tone aM, 1600 + kMdrv * 2400
+  aL = aB * 0.58 + aM * 0.42
+  aR = aB * 0.42 + aM * 0.58
+  outs aL, aR
 endin
 
 instr 905 ; Release one sustained MIDI-key instrument
@@ -1857,45 +2002,6 @@ function extractCsInstruments(csd: string) {
   return csd.slice(start + startTag.length, end);
 }
 
-async function connectCsoundNode(
-  csound: CsoundObj,
-  appendLog: (line: string) => void,
-) {
-  try {
-    const [node, audioContext] = await Promise.all([
-      csound.getNode(),
-      csound.getAudioContext(),
-    ]);
-    if (node && audioContext) {
-      try {
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 512;
-        analyser.smoothingTimeConstant = 0.55;
-        try {
-          node.disconnect();
-        } catch {
-          /* not connected yet */
-        }
-        node.connect(analyser);
-        analyser.connect(audioContext.destination);
-        attachConcertAudioMeter(analyser);
-        appendLog("Csound → analyser → destination (concert audio-reactive meter on).");
-      } catch {
-        try {
-          node.connect(audioContext.destination);
-          appendLog("Csound AudioNode connected to browser destination (no analyser tap).");
-        } catch {
-          appendLog("Csound AudioNode already connected or connection was rejected.");
-        }
-      }
-    } else {
-      appendLog("Csound AudioNode not available yet after start().");
-    }
-  } catch (error) {
-    appendLog(`Csound node connection check failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
 function toBrowserCsd(source: string) {
   const endTag = "</CsoundSynthesizer>";
   const end = source.indexOf(endTag);
@@ -1914,7 +2020,7 @@ function toBrowserCsd(source: string) {
   csd = csd.replace(
     /schedule 12, 0, -1 ; V12 EEG control dashboard/,
     `schedule 12, 0, -1 ; V12 EEG control dashboard
-schedule 90, 0, -1 ; Browser WebAudio / NeuroVis control bridge`,
+schedule 90, 0, -1 ; Browser NeuroVis control bridge`,
   );
 
   csd = csd.replace(
@@ -1954,7 +2060,7 @@ instr 901 ; Browser-only Csound engine smoke test
 	outs aTone, aTone
 endin
 
-instr 90 ; Browser WebAudio / NeuroVis control bridge
+instr 90 ; Browser NeuroVis → Csound control bridge
 	kWebActive chnget "nv_web_active"
 	if kWebActive < 0.5 goto done
 

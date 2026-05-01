@@ -25,12 +25,14 @@ import {
   PanelTop,
   Radio,
   Rows3,
+  Repeat,
   Settings,
   Sparkles,
   SlidersHorizontal,
   Music2,
   Waves,
   Waypoints,
+  Workflow,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -41,6 +43,36 @@ const NAV = [
     href: "/v12",
     label: "V12 Workstation",
     icon: Music2,
+    group: "Workspace",
+  },
+  {
+    href: "/v13",
+    label: "V13 expansion",
+    icon: Layers3,
+    group: "Workspace",
+  },
+  {
+    href: "/v14",
+    label: "V14 expansion",
+    icon: Gauge,
+    group: "Workspace",
+  },
+  {
+    href: "/v15",
+    label: "V15 expansion",
+    icon: AudioWaveform,
+    group: "Workspace",
+  },
+  {
+    href: "/v16",
+    label: "V16 expansion",
+    icon: Repeat,
+    group: "Workspace",
+  },
+  {
+    href: "/v17",
+    label: "V17 expansion",
+    icon: Workflow,
     group: "Workspace",
   },
   {

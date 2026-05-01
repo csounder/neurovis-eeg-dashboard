@@ -262,7 +262,7 @@ Key changes:
 
 ### MuseBridge Swift App
 
-**`/Users/richardboulanger/Desktop/MuseBridgeApp/MuseBridge/main.swift`**
+**`swift-bridge/MuseBridgeApp/MuseBridge/MuseBridge/main.swift`** (canonical sources: `swift-bridge/main.swift`)
 
 Key sections:
 
@@ -350,7 +350,7 @@ Same as Muse S Athena except:
 If you modify `main.swift`:
 
 ```bash
-cd /Users/richardboulanger/Desktop/MuseBridgeApp/MuseBridge
+cd swift-bridge/MuseBridgeApp/MuseBridge
 
 # Clean and rebuild
 xcodebuild -project MuseBridge.xcodeproj -configuration Release clean build
@@ -392,7 +392,7 @@ MIDI keyboard + OSC brain modulation. More complex synthesis with multiple brain
 ├── MuseBridge                  # Swift binary (deployed from Desktop build)
 └── /tmp/muse_configurable.log  # Server logs
 
-/Users/richardboulanger/Desktop/MuseBridgeApp/MuseBridge/
+swift-bridge/MuseBridgeApp/MuseBridge/
 ├── main.swift                  # MuseBridge source (all data types)
 ├── build/Release/MuseBridge    # Compiled binary (5.7MB universal)
 └── MuseBridge.xcodeproj/       # Xcode project

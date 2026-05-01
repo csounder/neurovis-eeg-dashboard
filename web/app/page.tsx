@@ -19,6 +19,7 @@ import { RawEEGChart } from "@/components/charts/RawEEGChart";
 import { BandBars } from "@/components/charts/BandBars";
 import { BrainStateCard } from "@/components/widgets/BrainStateCard";
 import { QuickActions } from "@/components/widgets/QuickActions";
+import { BAND_EDGE_PRESET_OPTIONS } from "@/lib/bandEdgePreset";
 import { useNeuroStore } from "@/lib/store";
 import { BandHistoryChart } from "@/components/charts/BandHistoryChart";
 import {
@@ -28,7 +29,7 @@ import {
 } from "@/components/ui/ScaleControl";
 
 export default function OverviewPage() {
-  const { wsStatus, lastMessageAt, packetCount, deviceName, settings } =
+  const { wsStatus, lastMessageAt, packetCount, deviceName, settings, bandEdgePreset } =
     useNeuroStore(
       useShallow((s) => ({
         wsStatus: s.wsStatus,
@@ -36,12 +37,17 @@ export default function OverviewPage() {
         packetCount: s.packetCount,
         deviceName: s.deviceName,
         settings: s.settings,
+        bandEdgePreset: s.bandEdgePreset,
       })),
     );
 
+  const bandEdgeLabel =
+    BAND_EDGE_PRESET_OPTIONS.find((o) => o.id === bandEdgePreset)?.label ?? bandEdgePreset;
+
   const [rawScale, setRawScale] = React.useState<ScaleState>({
     auto: true,
-    value: 200,
+    /** Manual ±µV when Auto is off. Default 60 — resting EEG is often ~10–50 µV; ±200 looks almost flat. */
+    value: 60,
   });
   const [bandScale, setBandScale] = React.useState<ScaleState>({
     auto: true,
@@ -140,8 +146,8 @@ export default function OverviewPage() {
                 bipolar
                 min={10}
                 max={2000}
-                helpAuto="Each lane auto-scales to its own signal."
-                helpManual="Fixed ±µV range across all lanes."
+                helpAuto="Each lane auto-scales to its own signal (best default)."
+                helpManual="Fixed ±µV for all lanes. Muse raw is often tens of µV — try 40–80, not ±200."
               />
               <TraceSpeedControl
                 compact
@@ -178,7 +184,21 @@ export default function OverviewPage() {
             Band Powers
           </CardTitle>
         </CardHeader>
-        <CardBody>
+        <CardBody className="space-y-4">
+          <p className="text-xs leading-relaxed text-zinc-500">
+            <span className="text-zinc-400">δ looking inflated?</span> Band bars use the server Welch estimate, now fed from{" "}
+            <span className="text-zinc-300">CAR + notch + bandpass µV</span> (same chain as DSP) so slow drift is not mixed with raw
+            samples. You can still raise the δ integration floor via{" "}
+            <Link
+              href="/research#band-integration-preset"
+              className="text-sky-400 underline decoration-sky-500/40 underline-offset-2 hover:text-sky-300"
+            >
+              Research → Band integration preset
+            </Link>{" "}
+            (<span className="text-zinc-300">Research · stricter δ</span> = δ{" "}
+            <span className="font-mono text-zinc-300">1–4 Hz</span>). Active preset:{" "}
+            <span className="font-mono text-zinc-300">{bandEdgeLabel}</span>.
+          </p>
           <BandBars
             mode="relative"
             autoScale={bandScale.auto}

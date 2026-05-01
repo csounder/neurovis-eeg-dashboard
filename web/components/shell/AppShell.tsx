@@ -14,15 +14,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useNeuroVisSocket();
 
   const bandEdgePreset = useNeuroStore((s) => s.bandEdgePreset);
+  const uiSkin = useNeuroStore((s) => s.uiSkin);
 
   React.useEffect(() => {
     useNeuroStore.getState().hydrateEegTraceSourceFromStorage();
     useNeuroStore.getState().hydrateBandEdgePresetFromStorage();
+    useNeuroStore.getState().hydrateUiSkinFromStorage();
   }, []);
 
   React.useEffect(() => {
     bandFilters.setEdgeProfile(presetToBandEdgeProfile(bandEdgePreset));
   }, [bandEdgePreset]);
+
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.dataset.nvSkin = uiSkin;
+  }, [uiSkin]);
 
   const [mobileOpen, setMobileOpen] = React.useState(false);
 

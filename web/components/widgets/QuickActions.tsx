@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import {
+  Activity,
   Bluetooth,
   Brain,
   Check,
@@ -40,15 +41,18 @@ import {
  * hardware but flows through the same OSC + DSP path.
  */
 export function QuickActions() {
-  const { wsStatus, settings, deviceName, simRunning, latestEEGDevice } = useNeuroStore(
-    useShallow((s) => ({
-      wsStatus: s.wsStatus,
-      settings: s.settings,
-      deviceName: s.deviceName,
-      simRunning: s.clientSim.running,
-      latestEEGDevice: s.latestEEG?.deviceName,
-    })),
-  );
+  const { wsStatus, settings, deviceName, simRunning, latestEEGDevice, packetCount, lastMessageAt } =
+    useNeuroStore(
+      useShallow((s) => ({
+        wsStatus: s.wsStatus,
+        settings: s.settings,
+        deviceName: s.deviceName,
+        simRunning: s.clientSim.running,
+        latestEEGDevice: s.latestEEG?.deviceName,
+        packetCount: s.packetCount,
+        lastMessageAt: s.lastMessageAt,
+      })),
+    );
 
   const [recState, setRecState] = React.useState(recorder.status());
   React.useEffect(() => recorder.subscribe(setRecState), []);
@@ -57,6 +61,8 @@ export function QuickActions() {
   React.useEffect(() => calibration.subscribe(setCalibState), []);
 
   const [busy, setBusy] = React.useState<string | null>(null);
+  /** User pressed Start stream (Muse often streams before this; gives visible feedback). */
+  const [streamArmed, setStreamArmed] = React.useState(false);
   const run = async (key: string, fn: () => Promise<unknown> | unknown) => {
     setBusy(key);
     try {
@@ -70,6 +76,18 @@ export function QuickActions() {
 
   const simOn = simRunning || Boolean(settings.simulatorMode);
   const isConnected = Boolean(deviceName) && !simOn;
+  /** Real headset or browser sim — either path should allow arming the DSP stream. */
+  const canArmStream = wsStatus === "open" && (isConnected || simOn);
+
+  const packetsLookLive =
+    packetCount > 0 &&
+    lastMessageAt !== null &&
+    Date.now() - lastMessageAt < 4000;
+  const pipelineStreaming = streamArmed || packetsLookLive;
+
+  React.useEffect(() => {
+    if (wsStatus !== "open" || (!isConnected && !simOn)) setStreamArmed(false);
+  }, [isConnected, simOn, wsStatus]);
 
   const toggleRecord = () => {
     if (recState.recording) {
@@ -178,20 +196,40 @@ export function QuickActions() {
             </Link>
           )}
 
-          {/* ③ Start stream (toggle — no config page needed) */}
+          {/* ③ Start stream — REST ack + live packets both count as “streaming” in the UI */}
           <Button
-            variant="secondary"
+            variant={pipelineStreaming ? "primary" : "secondary"}
             size="sm"
-            onClick={() => run("start", api.start)}
-            disabled={busy !== null || wsStatus !== "open" || !isConnected}
-            leftIcon={<Play className="h-3.5 w-3.5" />}
+            onClick={() =>
+              run("start", async () => {
+                await api.start();
+                setStreamArmed(true);
+              })
+            }
+            disabled={busy !== null || !canArmStream}
+            leftIcon={
+              pipelineStreaming ? (
+                <Activity className="h-3.5 w-3.5 text-emerald-200" />
+              ) : (
+                <Play className="h-3.5 w-3.5" />
+              )
+            }
+            className={
+              pipelineStreaming
+                ? "ring-2 ring-emerald-400/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                : undefined
+            }
             title={
-              !isConnected
-                ? "Connect a device first (or click Start simulator on the right)"
-                : "Begin streaming through the DSP + OSC pipeline"
+              !canArmStream
+                ? wsStatus !== "open"
+                  ? "WebSocket must be connected to the NeuroVis backend"
+                  : "Connect a headset or start the simulator so there is a data source"
+                : pipelineStreaming
+                  ? "DSP pipeline active — EEG packets flowing or stream was armed"
+                  : "Tell the backend to start streaming (Muse often streams automatically after connect)"
             }
           >
-            Start stream
+            {pipelineStreaming ? "Streaming" : "Start stream"}
           </Button>
 
           {/*

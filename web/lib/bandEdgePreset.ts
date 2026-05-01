@@ -20,13 +20,13 @@ export const BAND_EDGE_PRESET_OPTIONS: {
     id: "neurovis",
     label: "NeuroVis default",
     summary:
-      "δ 0.5–4 Hz — exploratory default. Slightly more sub-1 Hz energy in the δ bucket (drift-sensitive on dry EEG).",
+      "δ 1–4 Hz (aligned with common research highpass); θ–γ unchanged. Relative band share uses integrated power per band.",
   },
   {
     id: "research_dc",
     label: "Research · stricter δ",
     summary:
-      "δ 1–4 Hz (Mind Monitor δ low edge); θ–γ unchanged. Cuts very-slow drift from the δ band without redefining other bands.",
+      "δ 1–4 Hz; θ–γ unchanged. Welch edges match NeuroVis default after δ alignment.",
   },
   {
     id: "mindmonitor",

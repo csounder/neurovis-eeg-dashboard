@@ -14,7 +14,7 @@ import { MIND_MONITOR_BAND_EDGES } from "./mindMonitor";
 
 /** Canonical EEG band edges (Hz) for trace visualization. */
 export const BAND_BOUNDS: Record<BandName, [number, number]> = {
-  delta: [0.5, 4],
+  delta: [1, 4],
   theta: [4, 8],
   alpha: [8, 13],
   beta: [13, 30],
@@ -23,7 +23,7 @@ export const BAND_BOUNDS: Record<BandName, [number, number]> = {
 
 /**
  * Stricter δ low edge (1 Hz) matching Mind Monitor’s δ floor; θ–γ stay on NeuroVis edges.
- * Reduces very-slow drift / motion energy counted as “delta” in wearable EEG.
+ * With default NeuroVis δ at 1–4 Hz, this profile matches the default trace edges.
  */
 export const RESEARCH_DC_BAND_BOUNDS: Record<BandName, [number, number]> = {
   ...BAND_BOUNDS,

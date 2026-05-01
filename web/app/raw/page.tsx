@@ -26,7 +26,8 @@ export default function RawPage() {
 
   const [scale, setScale] = React.useState<ScaleState>({
     auto: true,
-    value: 200,
+    /** Manual ±µV; resting EEG is often tens of µV — ±200 looks almost flat. */
+    value: 60,
   });
   const [traceWindow, setTraceWindow] = React.useState(256);
 
@@ -59,7 +60,7 @@ export default function RawPage() {
               min={10}
               max={2000}
               helpAuto="Each channel lane independently re-scales to its own peak so signals always fill the lane."
-              helpManual="Every lane uses the same fixed ±µV range — useful for comparing channels or watching for artifacts."
+              helpManual="Fixed ±µV for all lanes. With Muse raw, try ~40–80 µV, not ±200."
             />
             <TraceSpeedControl
               className="flex-1"

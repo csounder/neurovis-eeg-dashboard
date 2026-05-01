@@ -100,6 +100,7 @@ This document summarizes the React/Next.js migration and related work, and inclu
 | [RESEARCH-CAPTURE-AND-SYNC.md](./RESEARCH-CAPTURE-AND-SYNC.md) | Research routes, capture modes (browser recorder, disk session, rolling export, stimulus), clocks/markers, `bandEdgePreset`, PPG/store notes, file index |
 | [RESEARCH-EEG-AND-BASELINE-PATHS.md](./RESEARCH-EEG-AND-BASELINE-PATHS.md) | Browser trace source vs server band powers, DSP, conditioning lab |
 | [CONCERT-SONIFICATION-DUAL-SOURCE.md](./CONCERT-SONIFICATION-DUAL-SOURCE.md) | Perceptual strategies for two brains in the mix; **§10** shared **performance presets** (two MacBooks); **§11** **projection + hardware mixer** workflow; **§12** **dual-player software design** (future: server/store multiplexing, OSC namespaces) |
+| [V12-V17-WORKSTATION-MODES.md](./V12-V17-WORKSTATION-MODES.md) | **`/v12`–`/v17`** preset defaults; **MIDI CC1 + CC21–28** vs browser `instr 901`; **EEG / palette / harmony band** mapping; matrix fields that apply only to **desktop CSD** |
 
 ---
 

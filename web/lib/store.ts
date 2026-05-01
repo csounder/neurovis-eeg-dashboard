@@ -172,6 +172,11 @@ interface NeuroState {
   /** Apply `bandEdgePreset` from localStorage (client only). */
   hydrateBandEdgePresetFromStorage: () => void;
   setBandEdgePreset: (preset: BandEdgePreset) => void;
+
+  /** UI skin for quickly distinguishing browser vs embedded preview. */
+  uiSkin: "studio" | "sand" | "copper" | "olive" | "slate";
+  hydrateUiSkinFromStorage: () => void;
+  setUiSkin: (skin: NeuroState["uiSkin"]) => void;
   ingest: (msg: ServerMessage) => void;
   setDevices: (devices: DeviceInfo[]) => void;
   setActiveDevice: (name: string | null) => void;
@@ -208,8 +213,21 @@ function pushRing<T>(arr: T[], value: T, max: number): T[] {
 }
 
 const EEG_TRACE_LS_KEY = "neurovis.eegTraceSource";
+const UI_SKIN_LS_KEY = "neurovis.uiSkin";
 
 const EEG_TRACE_DEFAULT: EegTraceSource = "browser_dsp";
+const UI_SKIN_DEFAULT: NeuroState["uiSkin"] = "studio";
+
+function readUiSkinFromLocalStorage(): NeuroState["uiSkin"] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = localStorage.getItem(UI_SKIN_LS_KEY);
+    if (v === "studio" || v === "sand" || v === "copper" || v === "olive" || v === "slate") return v;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
 
 function readEegTraceSourceFromLocalStorage(): EegTraceSource | null {
   if (typeof window === "undefined") return null;
@@ -348,6 +366,9 @@ export const useNeuroStore = create<NeuroState>((set, get) => ({
   // Must match SSR — read localStorage in hydrateEegTraceSourceFromStorage() after mount.
   eegTraceSource: EEG_TRACE_DEFAULT,
 
+  // Must match SSR — read localStorage in hydrateUiSkinFromStorage() after mount.
+  uiSkin: UI_SKIN_DEFAULT,
+
   devices: [],
   activeDeviceName: null,
   settings: {},
@@ -442,6 +463,11 @@ export const useNeuroStore = create<NeuroState>((set, get) => ({
     if (v) set({ bandEdgePreset: v });
   },
 
+  hydrateUiSkinFromStorage: () => {
+    const v = readUiSkinFromLocalStorage();
+    if (v) set({ uiSkin: v });
+  },
+
   setBandEdgePreset: (preset) => {
     const v = coerceBandEdgePreset(preset);
     try {
@@ -455,6 +481,15 @@ export const useNeuroStore = create<NeuroState>((set, get) => ({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bandEdgePreset: v }),
     }).catch(() => {});
+  },
+
+  setUiSkin: (skin) => {
+    try {
+      localStorage.setItem(UI_SKIN_LS_KEY, skin);
+    } catch {
+      /* ignore */
+    }
+    set({ uiSkin: skin });
   },
 
   setDevices: (devices) => set({ devices }),
@@ -579,11 +614,12 @@ export const useNeuroStore = create<NeuroState>((set, get) => ({
         } else if (traceMode === "device_raw") {
           pipelineInput = m.raw;
         }
+        // browser_dsp: always route through client dsp.processEEG — it already
+        // respects masterEnabled / carEnabled / bandpass / etc. (Previously we
+        // required carEnabled here, which skipped the whole chain when CAR was
+        // off and made traces differ from another tab or browser.)
         const processed =
-          pipelineInput &&
-          traceMode === "browser_dsp" &&
-          dsp.getConfig().masterEnabled &&
-          dsp.getConfig().carEnabled
+          pipelineInput && traceMode === "browser_dsp"
             ? dsp.processEEG(pipelineInput).values
             : pipelineInput;
         if (processed && recorder.status().recording) {
@@ -785,6 +821,18 @@ export const useNeuroStore = create<NeuroState>((set, get) => ({
       case "device_list": {
         const m = msg as any;
         set({ devices: m.devices ?? [], lastMessageAt: now });
+        break;
+      }
+      case "hardware_disconnected": {
+        set({
+          deviceName: null,
+          activeDeviceName: null,
+          batteryPct: null,
+          touching: null,
+          packetCount: 0,
+          motion: { accel: null, gyro: null, ppg: null, fnirs: null },
+          lastMessageAt: now,
+        });
         break;
       }
       case "settings_updated": {

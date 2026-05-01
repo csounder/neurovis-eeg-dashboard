@@ -1,6 +1,7 @@
 "use client";
 
-// Tiny Web Audio API helper for UI beeps (calibration start/end, breath cues).
+// Tiny browser-audio helper for UI beeps (calibration start/end, breath cues).
+// This is intentionally not the Csound engine — only short OSC→gain cues elsewhere in the app.
 // No external assets — just pure oscillators with envelope shaping, so the bundle
 // stays small and audio works offline.
 //

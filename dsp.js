@@ -282,6 +282,7 @@ class DSPPipeline {
         stats: { mean: 0, std: 0, peak: 0 },
         fft: Array(10).fill(0),
         skipped: true,
+        spectralMicrovolts: [0, 0, 0, 0],
       };
     }
 
@@ -329,6 +330,10 @@ class DSPPipeline {
         this.median3.push(ch, sample),
       );
     }
+
+    // µV snapshot for upstream Welch / band-power integration (CAR + mains + band + median;
+    // excludes smoothing / scaling so PSD is not distorted by the display chain).
+    const spectralMicrovolts = processed.slice();
 
     // STEP 4: Exponential smoothing (reduce jitter)
     processed = processed.map((sample, ch) => this.smoother.smooth(sample, ch));
@@ -387,6 +392,7 @@ class DSPPipeline {
       stats,
       fft,
       skipped: !shouldOutput, // Flag for downsampling
+      spectralMicrovolts,
     };
   }
 
@@ -442,7 +448,7 @@ class DSPPipeline {
 
     // For now, return array of band powers based on window
     const bands = [
-      { name: "Delta", freqRange: [0.5, 4] },
+      { name: "Delta", freqRange: [1, 4] },
       { name: "Theta", freqRange: [4, 8] },
       { name: "Alpha", freqRange: [8, 13] },
       { name: "Beta", freqRange: [13, 30] },

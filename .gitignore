@@ -30,6 +30,11 @@ dist/
 build/
 .next/
 
+# Playwright (web/)
+web/playwright-report/
+web/test-results/
+web/blob-report/
+
 # Legacy static backups (primary UI is web/ Next.js app)
 public/index.html.backup*
 public/index.html.bak*
@@ -43,6 +48,16 @@ public/app.js.working-backup
 # Server disk session exports (NeuroVis bridge)
 data/session_recordings/
 
+# Xcode — MuseBridge macOS project under swift-bridge/
+# Keep .xcodeproj, shared schemes, and sources; ignore per-machine noise & local builds.
+swift-bridge/MuseBridgeApp/**/xcuserdata/
+swift-bridge/MuseBridgeApp/**/.xcuserstate
+swift-bridge/MuseBridgeApp/**/DerivedData/
+swift-bridge/MuseBridgeApp/**/XcodeDerivedData/
+swift-bridge/MuseBridgeApp/**/build/
+swift-bridge/MuseBridgeApp/**/*.moved-aside
+
 # Python
+.venv/
 __pycache__/
 *.pyc

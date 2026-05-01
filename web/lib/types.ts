@@ -20,7 +20,7 @@ export const BAND_NAMES: BandName[] = [
 ];
 
 export const BAND_RANGES: Record<BandName, [number, number]> = {
-  delta: [0.5, 4],
+  delta: [1, 4],
   theta: [4, 8],
   alpha: [8, 13],
   beta: [13, 30],
@@ -146,6 +146,12 @@ export interface BluetoothMessage {
   [k: string]: unknown;
 }
 
+/** Server → browser: user or API requested hardware disconnect; clear device UI state. */
+export interface HardwareDisconnectedMessage {
+  type: "hardware_disconnected";
+  reason?: string;
+}
+
 /** Server → browser: log a research marker (same clock as HTTP /api/research-event). */
 export interface ResearchEventBridgeMessage {
   type: "research_event";
@@ -171,6 +177,7 @@ export type ServerMessage =
   | InstrumentStatusMessage
   | RecordingCompleteMessage
   | BluetoothMessage
+  | HardwareDisconnectedMessage
   | ResearchEventBridgeMessage
   | { type: string; [k: string]: unknown };
 
@@ -194,6 +201,8 @@ export interface NeuroVisSettings {
     fnirs?: boolean;
   };
   recordingEnabled?: boolean;
+  /** WebSocket dashboard update rate (EEG, band powers, motion) in Hz; server clamps 1–60. */
+  wsRateHz?: number;
   deviceModel?: string;
   activeDevice?: string | null;
   [k: string]: unknown;

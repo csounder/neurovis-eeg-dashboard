@@ -1,5 +1,16 @@
 # Quick start — Launch, pair, play (Muse S Athena + Mind Monitor)
 
+For **focused** Athena-only or Muse-2-only checklists (directories, terminals, commands), see:
+
+- **[QUICKSTART-ATHENA.md](./QUICKSTART-ATHENA.md)** — Muse S Athena + Python `bleak` + venv
+- **[QUICKSTART-MUSE2.md](./QUICKSTART-MUSE2.md)** — Muse 2 / Swift `MuseBridge`
+- **[QUICKSTART-GANGLION.md](./QUICKSTART-GANGLION.md)** — OpenBCI Ganglion + BrainFlow
+- **[QUICKSTART-ULTRACORTEX.md](./QUICKSTART-ULTRACORTEX.md)** — Ultra Cortex / Cyton+Daisy workflow notes
+
+This page is a longer step-by-step (including optional Mind Monitor on a second laptop).
+
+---
+
 Step-by-step for **two laptops** (e.g. yours and Amy’s): same steps, same repo checkout. The **modern UI** is the Next.js app; the **brain** is still `server-enhanced.js`.
 
 ---
@@ -41,11 +52,14 @@ cd web
 npm install
 cd ..
 
-# Python deps for Muse S Athena bridge
+# Python deps for Muse S Athena bridge (bleak). On Homebrew Python (PEP 668),
+# use the project venv instead of the line below:
+#   ./scripts/setup-athena-venv.sh
+# Server auto-picks .venv/bin/python3 when present (see server-enhanced.js).
 python3 -m pip install -r requirements-athena.txt
 ```
 
-If `pip` complains, use `python3 -m pip install bleak` (that is all `requirements-athena.txt` lists today).
+If you use **only Muse 2 / Swift**, you can skip Python/`bleak` setup entirely — see [QUICKSTART-MUSE2.md](./QUICKSTART-MUSE2.md).
 
 ---
 
@@ -72,6 +86,28 @@ npm run dev
 ```
 
 Default: **http://localhost:3001**
+
+### If `npm start` exits with `EADDRINUSE` (port already in use)
+
+That means **3000**, **8080**, and/or **UDP 5000** are already taken — usually an **earlier `server-enhanced.js` is still running**. Your `cd` and `npm start` are fine; you’re trying to start a **second** backend.
+
+**Option A — Use the one that’s already running:** leave it alone; only Terminal B (`npm run dev` in `web/`) needs to be up for the UI at **http://localhost:3001**.
+
+**Option B — Stop the old backend, then start fresh:**
+
+```bash
+lsof -nP -iTCP:3000 -sTCP:LISTEN
+```
+
+Note the **PID** (second column), then:
+
+```bash
+kill <PID>
+# if it won’t exit:
+kill -9 <PID>
+```
+
+Then from the repo root, `npm start` (or `npm run start:swift` / `npm run start:athena`) again.
 
 ---
 

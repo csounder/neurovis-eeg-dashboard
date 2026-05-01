@@ -66,6 +66,19 @@ const config = {
   console.log(`${line}\n`);
 })();
 
+/** Prefer repo `.venv` so Athena works on PEP 668 / Homebrew Python (no system `pip install`). */
+function resolveAthenaPython() {
+  const fromEnv = process.env.ATHENA_PYTHON?.trim();
+  if (fromEnv) return fromEnv;
+  const venvUnix = path.join(__dirname, ".venv", "bin", "python3");
+  if (fs.existsSync(venvUnix)) return venvUnix;
+  const venvPy = path.join(__dirname, ".venv", "bin", "python");
+  if (fs.existsSync(venvPy)) return venvPy;
+  const venvWin = path.join(__dirname, ".venv", "Scripts", "python.exe");
+  if (fs.existsSync(venvWin)) return venvWin;
+  return "python3";
+}
+
 function verboseLog(...args) {
   if (config.verbose) console.log(...args);
 }
@@ -136,6 +149,25 @@ function broadcastResearchEvent(payload) {
     }
   });
   return { ok: true, delivered_to: delivered };
+}
+
+/** After REST/WS disconnect: clear server selection and tell browsers to drop device UI state. */
+function notifyHardwareDisconnected(reason) {
+  currentDevice = null;
+  const msg = JSON.stringify({
+    type: "hardware_disconnected",
+    ...(reason ? { reason: String(reason).slice(0, 200) } : {}),
+  });
+  let delivered = 0;
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(msg);
+      delivered++;
+    }
+  });
+  console.log(
+    `🔌 Hardware disconnect${reason ? ` (${reason})` : ""} — cleared currentDevice, WS → ${delivered} client(s)`,
+  );
 }
 
 app.options("/api/research-event", (req, res) => {
@@ -428,6 +460,8 @@ let ganglionInterval = null;
 
 let connectedDevices = [];
 let eegBuffer = [[], [], [], []];
+/** Same length as eegBuffer: CAR+notch+bandpass(+median) µV per sample for Welch bins (see dsp.spectralMicrovolts). */
+let eegSpectralBuffer = [[], [], [], []];
 let bandPowersBuffer = {
   absolute: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
   relative: { delta: [], theta: [], alpha: [], beta: [], gamma: [] },
@@ -479,7 +513,7 @@ let settings = {
   selectedChannels: [0, 1, 2, 3],
   recordingEnabled: false,
   oscRateHz: 256, // OSC output rate (Hz)
-  wsRateHz: 10, // WebSocket dashboard rate (Hz)
+  wsRateHz: 30, // WebSocket dashboard rate (Hz) — EEG/bands/motion to browser; was 10 (felt sluggish)
   outputRateHz: 256, // EEG stream output rate (can be 10, 64, 128, 256, 512 Hz)
 
   // Device & Voltage Scaling
@@ -535,7 +569,7 @@ let settings = {
 
   /**
    * Welch / FFT band bin edges (Hz). Matches web `bandEdgePreset`.
-   * neurovis: δ 0.5–4; research_dc: δ 1–4 (Mind Monitor δ floor), θ–γ NeuroVis;
+   * neurovis: δ 1–4 (highpass-aligned); research_dc: same δ; θ–γ NeuroVis;
    * mindmonitor: full Mind Monitor manual edges.
    */
   bandEdgePreset: "neurovis",
@@ -548,9 +582,17 @@ let packetCount = 0;
 let bandPowerCount = 0; // For real Muse: count EEG packets to broadcast band powers @ 10 Hz
 let simulatorInterval = null;
 
-// WebSocket throttle: 10 Hz = 100ms between broadcasts
-const WS_BROADCAST_RATE_HZ = 10;
-const WS_BROADCAST_INTERVAL_MS = 1000 / WS_BROADCAST_RATE_HZ; // 100ms
+// WebSocket throttle — interval from `settings.wsRateHz` (1–60 Hz, default 30)
+function clampWsRateHz(hz) {
+  const n = Number(hz);
+  if (!Number.isFinite(n)) return 30;
+  return Math.max(1, Math.min(60, Math.round(n)));
+}
+
+function wsBroadcastIntervalMs() {
+  return 1000 / clampWsRateHz(settings.wsRateHz);
+}
+
 let lastWSBroadcastTime = 0;
 
 // ============================================================================
@@ -558,7 +600,8 @@ let lastWSBroadcastTime = 0;
 // ============================================================================
 
 const NEUROVIS_WELCH_BAND_RANGES = {
-  delta: [0.5, 4],
+  // 1 Hz low edge matches typical EEG highpass / Mind Monitor δ; avoids inflating δ with slow drift.
+  delta: [1, 4],
   theta: [4, 8],
   alpha: [8, 13],
   beta: [13, 30],
@@ -591,11 +634,16 @@ function welchBandRangesForPreset(preset) {
 }
 
 function calculateBandPowersFromEEG() {
-  // Uses the live raw EEG ring buffer to calculate true frequency-band power.
-  // Returns {absolute, relative} matching Muse format for WebSocket broadcast
-
+  // Uses live EEG ring buffer: prefer DSP-conditioned µV (bandpass/etc.) so δ is not inflated
+  // by raw slow drift when server highpass matches `settings.bandpassLo` (default 1 Hz).
   try {
-    if (!eegBuffer || eegBuffer.length < 4 || eegBuffer[0].length < 128) {
+    const spectralReady =
+      eegSpectralBuffer &&
+      eegSpectralBuffer.length >= 4 &&
+      eegSpectralBuffer[0].length >= 128;
+    const srcBuf = spectralReady ? eegSpectralBuffer : eegBuffer;
+
+    if (!srcBuf || srcBuf.length < 4 || srcBuf[0].length < 128) {
       return null;
     }
 
@@ -608,22 +656,22 @@ function calculateBandPowersFromEEG() {
       gamma: { range: ranges.gamma, label: "γ" },
     };
 
-    const sampleRate = 256;
-    // Shorter window gives the Research monitor visibly live values while still
-    // covering delta at 256 Hz well enough for an exploratory dashboard.
-    const n = Math.min(128, ...eegBuffer.slice(0, 4).map((buf) => buf.length));
+    const n = Math.min(128, ...srcBuf.slice(0, 4).map((buf) => buf.length));
     if (n < 128) return null;
 
-    let totalPower = 0;
-    const bandPowers = {};
+    const sampleRate = 256;
+    /** Sum of |bin|^2 (scaled) over all channels and in-band bins — used for relative share. */
+    const bandIntegrated = {};
+    /** Mean bin power (integrated / bin count) — for log absolute display. */
+    const bandMean = {};
 
     Object.keys(bands).forEach((bandName) => {
       const range = bands[bandName].range;
-      let power = 0;
+      let integrated = 0;
       let bins = 0;
 
       for (let ch = 0; ch < 4; ch++) {
-        const raw = eegBuffer[ch].slice(-n);
+        const raw = srcBuf[ch].slice(-n);
         if (raw.length < n) continue;
         const mean = raw.reduce((sum, value) => sum + value, 0) / raw.length;
         const lo = Math.max(1, Math.ceil((range[0] * n) / sampleRate));
@@ -639,24 +687,31 @@ function calculateBandPowersFromEEG() {
             re += sample * Math.cos(phase);
             im -= sample * Math.sin(phase);
           }
-          power += (re * re + im * im) / n;
+          integrated += (re * re + im * im) / n;
           bins++;
         }
       }
 
-      bandPowers[bandName] = bins > 0 ? power / bins : 0;
-      totalPower += bandPowers[bandName];
+      bandIntegrated[bandName] = integrated;
+      bandMean[bandName] = bins > 0 ? integrated / bins : 0;
     });
 
+    const totalIntegrated = Object.keys(bands).reduce(
+      (acc, b) => acc + bandIntegrated[b],
+      0,
+    );
+
     const relativePowers = {};
-    Object.keys(bandPowers).forEach((bandName) => {
+    Object.keys(bands).forEach((bandName) => {
       relativePowers[bandName] =
-        totalPower > 0 ? bandPowers[bandName] / totalPower : 0.2;
+        totalIntegrated > 0
+          ? bandIntegrated[bandName] / totalIntegrated
+          : 0.2;
     });
 
     const absolutePowers = {};
-    Object.keys(bandPowers).forEach((bandName) => {
-      absolutePowers[bandName] = 10 * Math.log10(Math.max(bandPowers[bandName], 1e-12));
+    Object.keys(bands).forEach((bandName) => {
+      absolutePowers[bandName] = 10 * Math.log10(Math.max(bandMean[bandName], 1e-12));
     });
 
     return {
@@ -1222,16 +1277,27 @@ function switchBleBridgeMode(mode) {
 
 function launchSwiftBridge() {
   const useAthenaBridge = config.bridgeMode === "athena";
-  const bridgeCommand = useAthenaBridge ? "python3" : config.swiftBridgePath;
+  const bridgeCommand = useAthenaBridge
+    ? resolveAthenaPython()
+    : config.swiftBridgePath;
   const bridgeArgs = useAthenaBridge ? [config.athenaBridgePath] : [];
   const bridgeLabel = useAthenaBridge ? "Athena BLE bridge" : "Swift bridge";
   console.log(
     `🚀 Launching ${bridgeLabel}: ${useAthenaBridge ? config.athenaBridgePath : config.swiftBridgePath}`,
   );
+  if (useAthenaBridge) {
+    console.log(
+      `   Python: ${bridgeCommand}${bridgeCommand === "python3" ? " (set ATHENA_PYTHON or create .venv — see scripts/setup-athena-venv.sh)" : ""}`,
+    );
+  }
 
   swiftProcess = spawn(bridgeCommand, bridgeArgs, {
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
+    env: {
+      ...process.env,
+      ...(useAthenaBridge ? { PYTHONUNBUFFERED: "1" } : {}),
+    },
   });
 
   if (useAthenaBridge) {
@@ -1316,13 +1382,23 @@ function launchSwiftBridge() {
 // ============================================================================
 
 function broadcastEEGData(eeg, processed, packet = {}) {
-  // Buffer for visualization
+  // Buffer for visualization / legacy Welch fallback
   eeg.forEach((value, ch) => {
     eegBuffer[ch].push(value);
     if (eegBuffer[ch].length > config.maxBufferSize) {
       eegBuffer[ch].shift();
     }
   });
+
+  const sm = processed?.spectralMicrovolts;
+  if (Array.isArray(sm) && sm.length === 4) {
+    for (let ch = 0; ch < 4; ch++) {
+      eegSpectralBuffer[ch].push(Number(sm[ch]) || 0);
+      if (eegSpectralBuffer[ch].length > config.maxBufferSize) {
+        eegSpectralBuffer[ch].shift();
+      }
+    }
+  }
 
   // Record data if enabled
   if (settings.recordingEnabled) {
@@ -1351,14 +1427,14 @@ function broadcastEEGData(eeg, processed, packet = {}) {
     sendOSCtoCSsound(processed.processed);
   }
 
-  // Throttle WebSocket broadcasts to 10 Hz (100ms interval)
+  // Throttle WebSocket broadcasts to settings.wsRateHz (default 30 Hz)
   const now = Date.now();
-  if (now - lastWSBroadcastTime < WS_BROADCAST_INTERVAL_MS) {
+  if (now - lastWSBroadcastTime < wsBroadcastIntervalMs()) {
     return; // Skip this broadcast, not enough time has passed
   }
   lastWSBroadcastTime = now;
 
-  // Broadcast to WebSocket clients (10 Hz rate)
+  // Broadcast to WebSocket clients (dashboard rate)
   const payload = {
     type: "eeg",
     timestamp: packet.timestamp || Date.now(),
@@ -2039,8 +2115,8 @@ function broadcastBandPowers(absolute, relative) {
     sendBandPowersOSC(absolute, normalizedRelative);
   }
 
-  // Throttle WebSocket to avoid overwhelming browser clients (10 Hz = 100ms)
-  if (now - lastBandPowersBroadcast < WS_BROADCAST_INTERVAL_MS) {
+  // Throttle WebSocket to dashboard rate (settings.wsRateHz)
+  if (now - lastBandPowersBroadcast < wsBroadcastIntervalMs()) {
     return;
   }
   lastBandPowersBroadcast = now;
@@ -2066,8 +2142,8 @@ function broadcastMotionData(sensorType, values) {
   sessionDisk.setLastMotion(sensorType, values);
   const now = Date.now();
 
-  // Throttle per sensor type to WS rate (10 Hz = 100ms)
-  if (now - lastMotionBroadcast[sensorType] < WS_BROADCAST_INTERVAL_MS) {
+  // Throttle per sensor type to dashboard WS rate
+  if (now - lastMotionBroadcast[sensorType] < wsBroadcastIntervalMs()) {
     return;
   }
   lastMotionBroadcast[sensorType] = now;
@@ -2273,13 +2349,16 @@ function handleWebSocketMessage(msg, ws) {
       break;
 
     case "disconnect_device":
-      if (swiftProcess && swiftProcess.stdin) {
-        swiftProcess.stdin.write(
-          JSON.stringify({
-            command: "disconnect",
-          }) + "\n",
-        );
+      if (swiftProcess?.stdin && !swiftProcess.killed) {
+        try {
+          swiftProcess.stdin.write(
+            JSON.stringify({ command: "disconnect" }) + "\n",
+          );
+        } catch (e) {
+          console.warn("⚠️ Bridge stdin write failed:", e?.message || e);
+        }
       }
+      notifyHardwareDisconnected("ws disconnect_device");
       break;
 
     case "update_settings":
@@ -2451,6 +2530,13 @@ function updateSettings(newSettings) {
     settings.bandEdgePreset = normalizeBandEdgePreset(newSettings.bandEdgePreset);
   }
 
+  settings.wsRateHz = clampWsRateHz(settings.wsRateHz);
+  if (newSettings.wsRateHz !== undefined) {
+    console.log(
+      `📡 WebSocket dashboard rate: ${settings.wsRateHz} Hz (~${(1000 / settings.wsRateHz).toFixed(1)} ms)`,
+    );
+  }
+
   // If device model changed, update Y-axis range automatically
   if (
     newSettings.deviceModel &&
@@ -2519,17 +2605,18 @@ app.post("/api/start", (req, res) => {
 
 app.post("/api/disconnect", (req, res) => {
   // Legacy: OpenBCI disconnect command
-  // For Muse: Send WebSocket disconnect_device message
-  if (swiftProcess && swiftProcess.stdin) {
-    swiftProcess.stdin.write(
-      JSON.stringify({
-        command: "disconnect",
-      }) + "\n",
-    );
-    res.json({ status: "disconnected" });
-  } else {
-    res.json({ status: "ok" });
+  // For Muse / Athena: newline JSON to the bridge stdin + clear server + browser state
+  if (swiftProcess?.stdin && !swiftProcess.killed) {
+    try {
+      swiftProcess.stdin.write(
+        JSON.stringify({ command: "disconnect" }) + "\n",
+      );
+    } catch (e) {
+      console.warn("⚠️ Bridge stdin write failed:", e?.message || e);
+    }
   }
+  notifyHardwareDisconnected("POST /api/disconnect");
+  res.json({ status: "disconnected" });
 });
 
 // ============================================================================
@@ -4076,7 +4163,8 @@ async function startGanglion() {
 
     const boardId = BoardIds.GANGLION_BOARD; // BLED dongle
     const params = new BrainFlowInputParams();
-    params.serial_port = "/dev/cu.usbmodem11"; // BLED dongle port
+    params.serial_port =
+      process.env.GANGLION_SERIAL_PORT || "/dev/cu.usbmodem11";
 
     ganglionBoard = new BoardShim(boardId, params);
 

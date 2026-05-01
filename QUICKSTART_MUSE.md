@@ -1,9 +1,15 @@
 # NeuroVis + Muse Hardware - Quick Start
 
-> **Modern stack (Next.js + Muse S Athena + Mind Monitor):** use the step-by-step guide  
-> **`docs/QUICKSTART-LAUNCH-PAIR-PLAY.md`** — two terminals, ports **3001** / **3000** / **8080**, OSC **5000**.
+**Device-specific quick starts (directories, two terminals, commands):**
 
-The sections below describe the **legacy single-port** flow (**http://localhost:3000** only). Prefer the doc above for current development.
+- **Muse S Athena (Python BLE):** [docs/QUICKSTART-ATHENA.md](docs/QUICKSTART-ATHENA.md)
+- **Muse 2 / Swift LibMuse (default):** [docs/QUICKSTART-MUSE2.md](docs/QUICKSTART-MUSE2.md)
+- **OpenBCI Ganglion (BrainFlow):** [docs/QUICKSTART-GANGLION.md](docs/QUICKSTART-GANGLION.md)
+- **OpenBCI Ultra Cortex (Cyton+Daisy):** [docs/QUICKSTART-ULTRACORTEX.md](docs/QUICKSTART-ULTRACORTEX.md)
+
+> **Modern stack (Next.js + Mind Monitor + deep dive):** [docs/QUICKSTART-LAUNCH-PAIR-PLAY.md](docs/QUICKSTART-LAUNCH-PAIR-PLAY.md) — ports **3001** / **3000** / **8080**, OSC **5000**.
+
+The sections below describe the **legacy single-port** flow (**http://localhost:3000** only). Prefer the links above for current Muse 2 vs Athena vs OpenBCI setup.
 
 ## 🚀 Start the Dashboard (30 seconds)
 

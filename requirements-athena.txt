@@ -1,1 +1,5 @@
+# bleak — Athena BLE (Homebrew PEP 668: use a venv, not system pip)
+#   ./scripts/setup-athena-venv.sh
+#   or: python3 -m venv .venv && .venv/bin/pip install -r requirements-athena.txt
+# NeuroVis auto-uses .venv/bin/python3 when present (or set ATHENA_PYTHON).
 bleak

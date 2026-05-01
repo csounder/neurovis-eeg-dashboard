@@ -64,7 +64,10 @@ function EegTraceSourcePanel() {
         in-browser DSP path. <strong className="text-zinc-400">Band power magnitudes</strong> (dashboard, Csound,
         Concert, Stimulus) follow the server Welch bins — use{" "}
         <strong className="text-zinc-400">Band integration preset</strong> below so trace edges and server δ bins stay
-        aligned.
+        aligned. This setting is stored per <strong className="text-zinc-400">browser origin</strong> (e.g.{" "}
+        <span className="font-mono text-zinc-400">localhost</span> vs{" "}
+        <span className="font-mono text-zinc-400">127.0.0.1</span>) — Cursor’s embedded browser and Chrome do not share
+        it.
       </p>
       <div className="space-y-2" role="radiogroup" aria-label="EEG trace source">
         {EEG_TRACE_OPTIONS.map((opt) => (
@@ -113,16 +116,20 @@ function BandEdgePresetPanel() {
   const setBandEdgePreset = useNeuroStore((s) => s.setBandEdgePreset);
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/35 p-4">
+    <div
+      id="band-integration-preset"
+      className="scroll-mt-28 rounded-lg border border-zinc-800 bg-zinc-950/35 p-4"
+    >
       <div className="mb-2">
         <h3 className="text-sm font-medium text-zinc-200">Band integration preset (δ–γ)</h3>
         <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
           Same edges drive the <strong className="text-zinc-400">browser biquad trace bank</strong> and the{" "}
           <strong className="text-zinc-400">Node bridge Welch bins</strong> (WebSocket{" "}
-          <code className="text-zinc-600">bandPowers</code>, OSC, Csound, Concert, Stimulus). Stricter δ uses a{" "}
-          <strong className="text-zinc-400">1 Hz</strong> low edge on the delta band (Mind Monitor δ floor) to keep
-          very-slow drift and motion-heavy energy out of the δ bucket — common practice on consumer EEG before
-          interpreting slow power.
+          <code className="text-zinc-600">bandPowers</code>, OSC, Csound, Concert, Stimulus). Welch magnitude is computed on{" "}
+          <strong className="text-zinc-400">DSP-conditioned µV</strong> (after CAR, mains notch, and bandpass — see server{" "}
+          <code className="text-zinc-600">spectralMicrovolts</code>), not on raw samples, so δ is less polluted by slow drift
+          when the highpass is enabled. Stricter δ uses a <strong className="text-zinc-400">1 Hz</strong> low edge on the δ
+          bin (Mind Monitor δ floor) for consumers who want an extra integration guardrail alongside the filter.
         </p>
       </div>
       <div className="space-y-2" role="radiogroup" aria-label="Band edge preset">
