@@ -76,6 +76,12 @@ const NAV = [
     group: "Workspace",
   },
   {
+    href: "/v18",
+    label: "V18 expansion",
+    icon: Grid2x2,
+    group: "Workspace",
+  },
+  {
     href: "/concert",
     label: "Concert Mode",
     icon: Film,

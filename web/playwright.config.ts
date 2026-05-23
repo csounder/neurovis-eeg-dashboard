@@ -9,7 +9,7 @@ const reuseExistingServer = process.env.PLAYWRIGHT_REUSE_SERVER === "1";
 
 /**
  * E2E runs with NEXT_PUBLIC_PLAYWRIGHT=1 so the V12 page exposes
- * window.__nvConcertLevel (RMS from the same concert-meter Analyser as the UI).
+ * window.__nvConcertLevel + __nvMeterProbe (Playwright builds).
  *
  * In CI, the webServer runs **only** `next start` (no inline `next build`). Running the
  * full production build inside Playwright’s webServer process, then keeping that shell
@@ -30,21 +30,23 @@ export default defineConfig({
   timeout: 300_000,
   expect: { timeout: 90_000 },
   use: {
-    ...devices["Desktop Chrome"],
     baseURL: BASE_URL,
     trace: "on-first-retry",
     navigationTimeout: 90_000,
-    launchOptions: {
-      args: [
-        "--autoplay-policy=no-user-gesture-required",
-        "--disable-dev-shm-usage",
-      ],
-    },
   },
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: {
+          args: ["--autoplay-policy=no-user-gesture-required", "--disable-dev-shm-usage"],
+        },
+      },
+    },
+  ],
   webServer: {
-    command: isCi
-      ? `npx next start -p ${WEB_PORT}`
-      : `npx next dev -p ${WEB_PORT}`,
+    command: isCi ? `npx next start -p ${WEB_PORT}` : `npx next dev -p ${WEB_PORT}`,
     url: `${BASE_URL}/v12`,
     reuseExistingServer,
     timeout: isCi ? 120_000 : 180_000,

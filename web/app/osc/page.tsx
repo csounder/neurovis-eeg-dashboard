@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Radio, Send } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
+import { CopyableConsole } from "@/components/ui/CopyableConsole";
 import { Button } from "@/components/ui/Button";
 import { Toggle } from "@/components/ui/Toggle";
 import { Slider } from "@/components/ui/Slider";
@@ -43,6 +44,20 @@ export default function OSCPage() {
     if (settings.oscStreams)
       setStreams((prev) => ({ ...prev, ...settings.oscStreams }));
   }, [settings]);
+
+  const receiverSnippets = React.useMemo(
+    () => ({
+      csound: `giOSC OSCinit ${port}
+ka[] init 5
+kF   OSClisten giOSC, "${prefix}/bands/alpha_absolute", "ffff", ka[0], ka[1], ka[2], ka[3]`,
+      max: `[udpreceive ${port}]
+    |
+[route ${prefix}]
+    |
+[route /bands /eeg /motion]`,
+    }),
+    [port, prefix],
+  );
 
   const saveSettings = async () => {
     setBusy(true);
@@ -281,28 +296,24 @@ export default function OSCPage() {
             </CardTitle>
           </CardHeader>
           <CardBody className="space-y-4 text-xs">
-            <div>
-              <div className="mb-1 font-mono uppercase tracking-wider text-zinc-500">
-                Csound (OSCinit / OSClisten)
-              </div>
-              <pre className="scroll-thin overflow-x-auto rounded-md border border-zinc-800 bg-zinc-950/80 p-3 font-mono text-[11px] leading-5 text-zinc-300">
-{`giOSC OSCinit ${port}
-ka[] init 5
-kF   OSClisten giOSC, "${prefix}/bands/alpha_absolute", "ffff", ka[0], ka[1], ka[2], ka[3]`}
-              </pre>
-            </div>
-            <div>
-              <div className="mb-1 font-mono uppercase tracking-wider text-zinc-500">
-                Max / MSP (udpreceive)
-              </div>
-              <pre className="scroll-thin overflow-x-auto rounded-md border border-zinc-800 bg-zinc-950/80 p-3 font-mono text-[11px] leading-5 text-zinc-300">
-{`[udpreceive ${port}]
-    |
-[route ${prefix}]
-    |
-[route /bands /eeg /motion]`}
-              </pre>
-            </div>
+            <CopyableConsole
+              title="Csound (OSCinit / OSClisten)"
+              text={receiverSnippets.csound}
+              emptyPlaceholder=""
+              downloadBasename="neurovis-osc-csound-receiver"
+              ariaLabel="Csound OSC receiver snippet"
+              textareaClassName="min-h-[4.5rem] h-auto"
+              className="bg-zinc-950/80"
+            />
+            <CopyableConsole
+              title="Max / MSP (udpreceive)"
+              text={receiverSnippets.max}
+              emptyPlaceholder=""
+              downloadBasename="neurovis-osc-max-receiver"
+              ariaLabel="Max MSP OSC receiver snippet"
+              textareaClassName="min-h-[4.5rem] h-auto"
+              className="bg-zinc-950/80"
+            />
             <p className="text-zinc-500">
               Full address reference is in{" "}
               <code>README-CSOUND-INTEGRATION.md</code>.

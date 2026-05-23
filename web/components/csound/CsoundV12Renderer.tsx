@@ -1,9 +1,11 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Activity, AlertTriangle, Music2, Power, Square, Volume2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { CopyableConsole } from "@/components/ui/CopyableConsole";
 import { Slider } from "@/components/ui/Slider";
 import type { BandName, BandPowers, EEGMessage } from "@/lib/types";
 import { attachConcertAudioMeter, getConcertAudioLevel, stopConcertAudioMeter } from "@/lib/concertAudioMeter";
@@ -12,7 +14,8 @@ import {
   yieldAfterOrchestraCompiled,
   yieldCsoundInstanceReady,
 } from "@/lib/csoundWasmYield";
-import { rewireCsoundAfterStart, wireCsoundBeforeStart } from "@/lib/csoundWebAudioWire";
+import { formatCaught } from "@/lib/formatCaught";
+import { wireCsoundBeforeStart } from "@/lib/csoundWebAudioWire";
 import type { CsoundObj } from "@csound/browser";
 import {
   LAUNCHKEY_CC_NUMBERS,
@@ -142,6 +145,9 @@ export interface V12RenderControls {
   melodyComplexity: number;
 }
 
+/** Browser workstation routes `/v12` … `/v18` share one Csound renderer; id is for UX + test hooks. */
+export type NeuroVisWorkstationId = "v12" | "v13" | "v14" | "v15" | "v16" | "v17" | "v18";
+
 export function CsoundV12Renderer({
   controls,
   latestEEG,
@@ -149,6 +155,7 @@ export function CsoundV12Renderer({
   latestBandTraces,
   motion,
   batteryPct,
+  workstationId = "v12",
 }: {
   controls: V12RenderControls;
   latestEEG?: EEGMessage | null;
@@ -156,6 +163,7 @@ export function CsoundV12Renderer({
   latestBandTraces: Record<BandName, number[]> | null;
   motion?: MotionStreams | null;
   batteryPct?: number | null;
+  workstationId?: NeuroVisWorkstationId;
 }) {
   const csoundRef = React.useRef<CsoundObj | null>(null);
   const audioContextRef = React.useRef<AudioContext | null>(null);
@@ -206,9 +214,10 @@ export function CsoundV12Renderer({
 
   React.useEffect(() => {
     if (!playwrightE2E || typeof window === "undefined") return;
-    const w = window as Window & { __nvConcertLevel?: () => number };
+    const w = window as Window & { __nvConcertLevel?: () => number; __nvMeterProbe?: () => number };
     if (status !== "running") {
       delete w.__nvConcertLevel;
+      delete w.__nvMeterProbe;
       return;
     }
     w.__nvConcertLevel = () => getConcertAudioLevel();
@@ -266,7 +275,7 @@ export function CsoundV12Renderer({
       await csound.destroy();
       appendLog("Browser Csound stopped.");
     } catch (error) {
-      appendLog(`Stop error: ${error instanceof Error ? error.message : String(error)}`);
+      appendLog(`Stop error: ${formatCaught(error)}`);
     } finally {
       stopConcertAudioMeter();
       csoundRef.current = null;
@@ -297,47 +306,51 @@ export function CsoundV12Renderer({
     const selected = access.inputs.get(selectedMidiInputId);
     if (!selected) return;
     selected.onmidimessage = (event) => {
-      if (!event.data) return;
-      const [statusByte = 0, data1 = 0, data2 = 0] = Array.from(event.data);
-      const csound = csoundRef.current;
-      if (!csound) return;
+      try {
+        if (!event.data) return;
+        const [statusByte = 0, data1 = 0, data2 = 0] = Array.from(event.data);
+        const csound = csoundRef.current;
+        if (!csound) return;
 
-      const kind = statusByte & 0xf0;
-      if (kind === 0x90 && data2 > 0) {
-        void startSustainedMidiNote(csound, data1, data2 / 127, orchestraModel, activeSustainedNotesRef.current);
-        setHeldNotes((prev) => new Set(prev).add(data1));
-      } else if (kind === 0x80 || (kind === 0x90 && data2 === 0)) {
-        void releaseSustainedMidiNote(csound, data1, activeSustainedNotesRef.current);
-        setHeldNotes((prev) => {
-          const next = new Set(prev);
-          next.delete(data1);
-          return next;
-        });
-      } else if (kind === 0xb0) {
-        const value = data2 / 127;
-        void csound.setControlChannel(`nv_cc${data1}_value`, value);
-        const launchCc = LAUNCHKEY_CC_NUMBERS.find((c) => c === data1);
-        if (launchCc !== undefined) {
-          setLaunchkeyCcs((prev) => ({ ...prev, [launchCc]: value }));
+        const kind = statusByte & 0xf0;
+        if (kind === 0x90 && data2 > 0) {
+          void startSustainedMidiNote(csound, data1, data2 / 127, orchestraModel, activeSustainedNotesRef.current);
+          setHeldNotes((prev) => new Set(prev).add(data1));
+        } else if (kind === 0x80 || (kind === 0x90 && data2 === 0)) {
+          void releaseSustainedMidiNote(csound, data1, activeSustainedNotesRef.current);
+          setHeldNotes((prev) => {
+            const next = new Set(prev);
+            next.delete(data1);
+            return next;
+          });
+        } else if (kind === 0xb0) {
+          const value = data2 / 127;
+          void csound.setControlChannel(`nv_cc${data1}_value`, value);
+          const launchCc = LAUNCHKEY_CC_NUMBERS.find((c) => c === data1);
+          if (launchCc !== undefined) {
+            setLaunchkeyCcs((prev) => ({ ...prev, [launchCc]: value }));
+          }
+          if (data1 === 1) {
+            setCc1Value(value);
+            void csound.setControlChannel("nv_cc1_value", value);
+            void csound.setControlChannel(
+              controls.cc1Mode === "volume" ? "nv_melody_volume" : "nv_melody_complexity",
+              value,
+            );
+          }
+          const now = performance.now();
+          if (now - lastCcLogRef.current > 500) {
+            appendLog(`USB MIDI CC${data1}: ${value.toFixed(3)}`);
+            lastCcLogRef.current = now;
+          }
+        } else if (kind === 0xe0) {
+          const raw14 = data1 + data2 * 128;
+          const value = clamp((raw14 - 8192) / 8192, -1, 1);
+          setPitchBendValue(value);
+          void csound.setControlChannel("nv_pitch_bend", value);
         }
-        if (data1 === 1) {
-          setCc1Value(value);
-          void csound.setControlChannel("nv_cc1_value", value);
-          void csound.setControlChannel(
-            controls.cc1Mode === "volume" ? "nv_melody_volume" : "nv_melody_complexity",
-            value,
-          );
-        }
-        const now = performance.now();
-        if (now - lastCcLogRef.current > 500) {
-          appendLog(`USB MIDI CC${data1}: ${value.toFixed(3)}`);
-          lastCcLogRef.current = now;
-        }
-      } else if (kind === 0xe0) {
-        const raw14 = data1 + data2 * 128;
-        const value = clamp((raw14 - 8192) / 8192, -1, 1);
-        setPitchBendValue(value);
-        void csound.setControlChannel("nv_pitch_bend", value);
+      } catch (err) {
+        console.error("[NeuroVis] MIDI handler:", err);
       }
     };
     appendLog(`USB MIDI input connected: ${selected.name || "MIDI input"}`);
@@ -354,13 +367,24 @@ export function CsoundV12Renderer({
   }, [selectedAudioOutputId]);
 
   async function start() {
-    if (csoundRef.current || status === "loading") return;
+    if (status === "loading") return;
+    if (csoundRef.current && status === "running") return;
+    if (csoundRef.current && status === "compiled") {
+      appendLog("Csound is still starting — wait for the status badge “running”, or click Stop to reset.");
+      return;
+    }
+    if (csoundRef.current) return;
     setStatus("loading");
     setLogs([]);
     try {
       const { Csound } = await import("@csound/browser");
 
-      const csound = await Csound({ useWorker: false, autoConnect: false });
+      const csound = await Csound({
+        useWorker: false,
+        useSPN: false,
+        outputChannelCount: 2,
+        autoConnect: false,
+      });
       if (!csound) throw new Error("Csound WASM failed to initialize");
       await yieldCsoundInstanceReady();
 
@@ -410,9 +434,10 @@ export function CsoundV12Renderer({
       });
       await syncEeg(csound, latestBandsAbs, latestBandTraces);
       await syncSensors(csound, latestEEG, motion, batteryPct);
-      await csound.readScore("f 0 86400\ni 999 0 86400\n");
+      await csound.readScore("f 1 0 4096 10 1\ni 999 0 86400\n");
+      /** Playback before start only (`TeachingCsoundRenderer` parity). Meter attaches **after** `start()` — pre-start taps can be orphaned when WASM rewires the worklet. */
       const wiredCtx = await wireCsoundBeforeStart(csound, appendLog, {
-        concertMeter: true,
+        concertMeter: false,
         logLabel: "Csound V12",
       });
       if (!wiredCtx) {
@@ -420,13 +445,6 @@ export function CsoundV12Renderer({
       }
       audioContextRef.current = wiredCtx;
       await csound.start();
-      const postCtx = await rewireCsoundAfterStart(csound, appendLog, {
-        concertMeter: true,
-        logLabel: "Csound V12",
-      });
-      if (postCtx) {
-        audioContextRef.current = postCtx;
-      }
       await csound.inputMessage("i 999 0 86400");
       appendLog("Csound keepalive instrument started for live performance.");
       await csound.inputMessage("i 908 0 -1");
@@ -434,11 +452,52 @@ export function CsoundV12Renderer({
         "Auto arrangement bed on (bass + melody progression). Turn off in Mix if you want MIDI-only silence.",
       );
       await yieldAfterCsoundStart();
-      const ctxAfter = (await csound.getAudioContext()) ?? wiredCtx ?? audioContextInit ?? null;
+      const ctxAfter =
+        (await csound.getAudioContext()) ?? wiredCtx ?? audioContextInit ?? null;
       if (ctxAfter) {
         audioContextRef.current = ctxAfter;
         await applyAudioOutput(ctxAfter, selectedAudioOutputId);
-        await ctxAfter.resume().catch(() => {});
+        for (let i = 0; i < 16; i++) {
+          if (ctxAfter.state === "running") break;
+          await ctxAfter.resume().catch(() => {});
+          await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        }
+      }
+      setStatus("running");
+      appendLog(`Workstation ${workstationId}: browser Csound running (same engine on /v12–/v18).`);
+      await sendCcDefaults(csound, controls, { metroScale, chordRange, globalVolume });
+      await primeBrowserMidiCcChannels(csound);
+      appendLog("Tip: press Audition Csound Engine, Audition V12 MIDI Chord, or play USB MIDI.");
+      appendLog("Browser engine: CC28 = level · CC25 = arp depth · CC26 = arp speed (full V12 arp = desktop CSD).");
+      try {
+        const node = await csound.getNode();
+        if (node) {
+          /** Must use `node.context` — analyser on a different BaseAudioContext throws and leaves RMS at 0. */
+          const an = node.context.createAnalyser();
+          an.fftSize = 512;
+          an.smoothingTimeConstant = 0.55;
+          /** Parallel tap only — do not chain analyser→destination (duplicate pulls confused Chrome in the wild). */
+          node.connect(an);
+          attachConcertAudioMeter(an);
+          if (playwrightE2E && typeof window !== "undefined") {
+            const w = window as Window & { __nvMeterProbe?: () => number };
+            w.__nvMeterProbe = () => {
+              const buf = new Float32Array(an.fftSize);
+              an.getFloatTimeDomainData(buf);
+              let peak = 0;
+              for (let i = 0; i < buf.length; i += 1) {
+                const x = Math.abs(buf[i] ?? 0);
+                if (x > peak) peak = x;
+              }
+              return peak;
+            };
+          }
+          appendLog("Concert meter: parallel analyser tap (does not change speaker path).");
+        } else {
+          appendLog("Concert meter: skipped — no Csound output node after start().");
+        }
+      } catch (err) {
+        appendLog(`Concert meter attach failed: ${formatCaught(err)}`);
       }
       appendLog(
         `Csound audio graph: AudioContext "${ctxAfter?.state ?? "?"}", ${ctxAfter?.sampleRate ?? srHost} Hz.`,
@@ -448,13 +507,8 @@ export function CsoundV12Renderer({
           `Csound browser output is still "${ctxAfter.state}" — click Resume Csound output or interact with the page; check tab/site mute and output device.`,
         );
       }
-      setStatus("running");
-      await sendCcDefaults(csound, controls, { metroScale, chordRange, globalVolume });
-      await primeBrowserMidiCcChannels(csound);
-      appendLog("Tip: press Audition Csound Engine, Audition V12 MIDI Chord, or play USB MIDI.");
-      appendLog("Browser engine: CC28 = level · CC25 = arp depth · CC26 = arp speed (full V12 arp = desktop CSD).");
     } catch (error) {
-      appendLog(`Start error: ${error instanceof Error ? error.message : String(error)}`);
+      appendLog(`Start error: ${formatCaught(error)}`);
       await stop("error");
     }
   }
@@ -732,7 +786,7 @@ export function CsoundV12Renderer({
         void ephemeral.close().catch(() => {});
       }, 600);
     } catch (error) {
-      appendLog(`Host-only beep failed: ${error instanceof Error ? error.message : String(error)}`);
+      appendLog(`Host-only beep failed: ${formatCaught(error)}`);
       void ephemeral.close().catch(() => {});
     }
   }
@@ -754,9 +808,6 @@ export function CsoundV12Renderer({
     audioContextRef.current = ctx;
     await applyAudioOutput(ctx, selectedAudioOutputId);
     await ctx.resume().catch(() => {});
-    if (cs) {
-      await rewireCsoundAfterStart(cs, appendLog, { concertMeter: true, logLabel: "Csound V12" });
-    }
     appendLog(`Resume Csound output: graph state is "${ctx.state}" (want "running").`);
     if (ctx.state !== "running") {
       appendLog("Check browser tab/site mute, system volume, and click Resume again after interacting with the page.");
@@ -779,7 +830,7 @@ export function CsoundV12Renderer({
       setAudioOutputs(outputs.length ? outputs : [{ id: "default", label: "System default" }]);
     } catch (error) {
       setAudioOutputStatus("error");
-      appendLog(`Audio output list error: ${error instanceof Error ? error.message : String(error)}`);
+      appendLog(`Audio output list error: ${formatCaught(error)}`);
     }
   }
 
@@ -801,7 +852,7 @@ export function CsoundV12Renderer({
       appendLog(`Audio output set to ${audioOutputs.find((o) => o.id === sinkId)?.label || sinkId}.`);
     } catch (error) {
       setAudioOutputStatus("error");
-      appendLog(`Audio output routing error: ${error instanceof Error ? error.message : String(error)}`);
+      appendLog(`Audio output routing error: ${formatCaught(error)}`);
     }
   }
 
@@ -821,7 +872,7 @@ export function CsoundV12Renderer({
       appendLog("USB MIDI access enabled.");
     } catch (error) {
       setMidiStatus("error");
-      appendLog(`MIDI access error: ${error instanceof Error ? error.message : String(error)}`);
+      appendLog(`MIDI access error: ${formatCaught(error)}`);
     }
   }
 
@@ -849,6 +900,24 @@ export function CsoundV12Renderer({
 
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border border-sky-500/30 bg-sky-950/40 p-3">
+        <div className="text-sm font-semibold text-sky-200">Production audio path (not browser WASM)</div>
+        <p className="mt-2 text-xs leading-6 text-zinc-300">
+          NeuroVis is built around the Node server sending <strong className="text-zinc-100">OSC to localhost:7400</strong> for{" "}
+          <strong className="text-zinc-100">desktop Csound</strong> (your .csd with <code className="rounded bg-zinc-900 px-1 text-zinc-200">OSCinit 7400</code>
+          , <code className="rounded bg-zinc-900 px-1 text-zinc-200">OSClisten</code> on <code className="text-zinc-300">/muse/…</code>). That path does{" "}
+          <strong className="text-zinc-100">not</strong> depend on WebAssembly in Chrome — it is the architecture in{" "}
+          <code className="text-zinc-400">README-CSOUND-INTEGRATION.md</code>. Turn streams on under{" "}
+          <Link href="/osc" className="font-medium text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
+            OSC / stream settings
+          </Link>
+          , run your Csound instrument, and keep using this UI for EEG + controls.
+        </p>
+        <p className="mt-2 text-xs leading-5 text-zinc-500">
+          The <strong className="text-zinc-400">Start Audio</strong> section below is an optional in-browser Csound demo; Web Audio + WASM can be silent on some setups. If you need sound today, use desktop Csound + OSC — you are not starting over, you are on the supported design.
+        </p>
+      </div>
+
       <div className="grid gap-3 md:grid-cols-[1fr_auto]">
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -859,9 +928,9 @@ export function CsoundV12Renderer({
             <Badge tone="amber">Browser EEG bridge</Badge>
           </div>
           <p className="mt-2 text-xs leading-5 text-zinc-400">
-            Compiles a browser-safe V12-inspired orchestra, replaces desktop OSC with NeuroVis
-            control channels in Csound, streams Muse values into the orchestra, and uses virtual or USB
-            MIDI notes to trigger the chord instrument.
+            Optional in-tab engine: compiles a browser-safe V12-inspired orchestra, feeds NeuroVis control channels, streams Muse
+            values, and uses virtual or USB MIDI for instr 901. For reliable concerts and teaching with full orchestration, prefer OSC →
+            desktop Csound above.
           </p>
           <ul className="mt-2 list-inside list-disc space-y-1 text-xs leading-5 text-zinc-500">
             <li>
@@ -895,9 +964,10 @@ export function CsoundV12Renderer({
         </div>
         <div className="flex items-center gap-2">
           <Button
-            data-testid="v12-start-audio"
+            data-testid="workstation-start-audio"
+            data-neurovis-workstation={workstationId}
             onClick={start}
-            disabled={status === "loading" || status === "running" || status === "compiled"}
+            disabled={status === "loading" || status === "running"}
             leftIcon={<Power className="h-4 w-4" />}
           >
             Start Audio
@@ -1332,22 +1402,21 @@ export function CsoundV12Renderer({
         </p>
       </div>
 
-      <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3" data-testid="v12-csound-console-panel">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-400">
-            Csound Console
-          </div>
+      <CopyableConsole
+        title="Csound Console"
+        text={logs.join("\n")}
+        emptyPlaceholder="Csound messages will appear here after Start Audio."
+        downloadBasename="neurovis-v12-csound"
+        ariaLabel="V12 Csound console log"
+        onNotify={appendLog}
+        headerEnd={
           <Button size="sm" variant="ghost" onClick={() => setLogs([])}>
             Clear
           </Button>
-        </div>
-        <pre
-          data-testid="v12-csound-console"
-          className="h-56 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-zinc-400"
-        >
-          {logs.length ? logs.join("\n") : "Csound messages will appear here after Start Audio."}
-        </pre>
-      </div>
+        }
+        data-testid="v12-csound-console-panel"
+        textareaTestId="v12-csound-console"
+      />
     </div>
   );
 }

@@ -1,0 +1,19 @@
+How to use
+In Finder, open /Users/richardboulanger/dB-Studio/NeuroVis/ and double-click Launch NeuroVis.command. Terminal will open and the launcher will:
+
+Free ports 3000 / 8080 / 3001 if anything is bound (uses your existing scripts/neurovis-stop.sh).
+Run npm install only if node_modules is missing (root and web/).
+Start the Node bridge (npm start → server-enhanced.js, HTTP :3000 + WebSocket :8080).
+Start the Next.js frontend (web/ → npm run dev, :3001).
+Poll http://localhost:3001 for up to 90 s, then open it in your default browser.
+Stream both server logs into the Terminal window.
+Press Ctrl+C in that Terminal window to stop both servers cleanly. Logs persist in .launcher-logs/bridge.log and .launcher-logs/web.log for post-mortems.
+
+Optional tweak
+To launch directly into a specific page (e.g. the new AI card on the Research page), set the env var or edit the script:
+
+NEUROVIS_OPEN_PATH=/research open "/Users/richardboulanger/dB-Studio/NeuroVis/Launch NeuroVis.command"
+Or change the OPEN_PATH="${NEUROVIS_OPEN_PATH:-/}" line near the top to "/research" to make that the default.
+
+One-time macOS Gatekeeper note
+The first time you double-click a .command file you may get "cannot be opened because it is from an unidentified developer." Right-click the file → Open → Open to clear the Gatekeeper flag once; subsequent double-clicks work normally.

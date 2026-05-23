@@ -9,6 +9,12 @@ import { presetToBandEdgeProfile } from "@/lib/bandEdgePreset";
 import { useNeuroStore } from "@/lib/store";
 import { useNeuroVisSocket } from "@/lib/useWebSocket";
 
+function syncNvSkinDom(skin: "studio" | "sand" | "copper" | "olive" | "slate") {
+  if (typeof document === "undefined") return;
+  document.documentElement.setAttribute("data-nv-skin", skin);
+  document.body?.setAttribute("data-nv-skin", skin);
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   // Opens the WebSocket once for the whole app tree.
   useNeuroVisSocket();
@@ -20,15 +26,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     useNeuroStore.getState().hydrateEegTraceSourceFromStorage();
     useNeuroStore.getState().hydrateBandEdgePresetFromStorage();
     useNeuroStore.getState().hydrateUiSkinFromStorage();
+    syncNvSkinDom(useNeuroStore.getState().uiSkin);
   }, []);
 
   React.useEffect(() => {
     bandFilters.setEdgeProfile(presetToBandEdgeProfile(bandEdgePreset));
   }, [bandEdgePreset]);
 
-  React.useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.documentElement.dataset.nvSkin = uiSkin;
+  React.useLayoutEffect(() => {
+    syncNvSkinDom(uiSkin);
   }, [uiSkin]);
 
   const [mobileOpen, setMobileOpen] = React.useState(false);

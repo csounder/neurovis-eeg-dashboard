@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
-    "test:e2e:ci": "NEXT_PUBLIC_PLAYWRIGHT=1 npm run build && NEXT_PUBLIC_PLAYWRIGHT=1 CI=1 playwright test",
+    "test:e2e": "playwright test --project chromium",
+    "test:e2e:ci": "NEXT_PUBLIC_PLAYWRIGHT=1 npm run build && NEXT_PUBLIC_PLAYWRIGHT=1 CI=1 playwright test --project chromium",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install chromium"

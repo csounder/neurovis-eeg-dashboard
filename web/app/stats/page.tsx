@@ -1,8 +1,10 @@
 "use client";
 
+import * as React from "react";
 import { Gauge, Zap } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
+import { CopyableConsole } from "@/components/ui/CopyableConsole";
 import { Stat } from "@/components/ui/Stat";
 import { useNeuroStore } from "@/lib/store";
 import { formatNumber } from "@/lib/utils";
@@ -33,6 +35,21 @@ export default function StatsPage() {
   );
 
   const latency = lastMessageAt !== null ? Date.now() - lastMessageAt : null;
+
+  const lastEegPayloadText = React.useMemo(() => {
+    if (!latestEEG) return "";
+    return JSON.stringify(
+      {
+        timestamp: latestEEG.timestamp,
+        deviceName: latestEEG.deviceName,
+        raw: latestEEG.raw?.map((v) => formatNumber(v, 2)),
+        stats: latestEEG.stats,
+        hasFft: Boolean(latestEEG.fft),
+      },
+      null,
+      2,
+    );
+  }, [latestEEG]);
 
   return (
     <div className="space-y-6">
@@ -93,21 +110,14 @@ export default function StatsPage() {
           </CardTitle>
         </CardHeader>
         <CardBody>
-          <pre className="scroll-thin max-h-96 overflow-auto rounded-md border border-zinc-800 bg-zinc-950/80 p-4 font-mono text-[11px] leading-5 text-zinc-300">
-            {latestEEG
-              ? JSON.stringify(
-                  {
-                    timestamp: latestEEG.timestamp,
-                    deviceName: latestEEG.deviceName,
-                    raw: latestEEG.raw?.map((v) => formatNumber(v, 2)),
-                    stats: latestEEG.stats,
-                    hasFft: Boolean(latestEEG.fft),
-                  },
-                  null,
-                  2,
-                )
-              : "— no data yet —"}
-          </pre>
+          <CopyableConsole
+            text={lastEegPayloadText}
+            emptyPlaceholder="— no data yet —"
+            downloadBasename="neurovis-stats-last-eeg"
+            ariaLabel="Last EEG payload JSON"
+            textareaClassName="max-h-96"
+            className="border-zinc-800/90 bg-zinc-950/40"
+          />
         </CardBody>
       </Card>
     </div>

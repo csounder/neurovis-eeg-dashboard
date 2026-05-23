@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { BookOpen, Clipboard, Download, Music2, Power, Square } from "lucide-react";
+import { BookOpen, Music2, Power, Square } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { CopyableConsole } from "@/components/ui/CopyableConsole";
 import { Slider } from "@/components/ui/Slider";
 import { Toggle } from "@/components/ui/Toggle";
 import type { BandName, BandPowers, EEGMessage } from "@/lib/types";
@@ -13,6 +14,7 @@ import {
   yieldCsoundInstanceReady,
 } from "@/lib/csoundWasmYield";
 import { wireCsoundBeforeStart } from "@/lib/csoundWebAudioWire";
+import { formatCaught } from "@/lib/formatCaught";
 import type { CsoundObj } from "@csound/browser";
 import {
   LAUNCHKEY_CC_ROW_BOTTOM,
@@ -43,6 +45,36 @@ type TeachingScales = {
   alpha: number;
   beta: number;
   gamma: number;
+};
+
+/** Snapshot pushed to Csound (possibly smoothed in the rAF loop). */
+type TeachingSensorSnapshot = {
+  raw: [number, number, number, number];
+  bandAbs: Record<BandName, number>;
+  bandN: Record<BandName, number>;
+  accelMag: number;
+  gyroMag: number;
+  ppgMag: number;
+  fnirsMag: number;
+};
+
+type TeachingUiSnapshot = {
+  model: number;
+  volume: number;
+  transpose: number;
+  pitchBend: number;
+  styleFamily: "dry" | "musical" | "rhythmic";
+  dryFlavor: 0 | 1 | 2;
+  musicalFlavor: 0 | 1 | 2;
+  rhythmicFlavor: 0 | 1 | 2;
+  scales: TeachingScales;
+  instrumentOn: boolean;
+};
+
+type TeachingEdgeSnapshot = {
+  teach_thresh: number;
+  teach_edge_beta: number;
+  teach_edge_gamma: number;
 };
 
 type MidiInputInfo = { id: string; name: string; manufacturer?: string };
@@ -185,6 +217,74 @@ const TEACHING_MODELS = [
   },
 ];
 
+const TEACH_BANDS: BandName[] = ["delta", "theta", "alpha", "beta", "gamma"];
+
+/**
+ * Browser receives EEG at the WebSocket dashboard rate (~30 Hz) and band powers ~10 Hz
+ * (see server `wsRateHz` / Welch cadence). Lerp each frame so Csound control channels move smoothly.
+ */
+const TEACH_SMOOTH_RAW = 0.34;
+const TEACH_SMOOTH_BAND = 0.16;
+const TEACH_SMOOTH_MOTION = 0.28;
+
+function emptyTeachingSensorSnapshot(): TeachingSensorSnapshot {
+  const bandAbs = {
+    delta: -2.5,
+    theta: -2.5,
+    alpha: -2.5,
+    beta: -2.5,
+    gamma: -2.5,
+  } as Record<BandName, number>;
+  const bandN = {
+    delta: 0,
+    theta: 0,
+    alpha: 0,
+    beta: 0,
+    gamma: 0,
+  } as Record<BandName, number>;
+  return {
+    raw: [0, 0, 0, 0],
+    bandAbs,
+    bandN,
+    accelMag: 0,
+    gyroMag: 0,
+    ppgMag: 0,
+    fnirsMag: 0,
+  };
+}
+
+function cloneTeachingSensorSnapshot(s: TeachingSensorSnapshot): TeachingSensorSnapshot {
+  return {
+    raw: [...s.raw] as [number, number, number, number],
+    bandAbs: { ...s.bandAbs },
+    bandN: { ...s.bandN },
+    accelMag: s.accelMag,
+    gyroMag: s.gyroMag,
+    ppgMag: s.ppgMag,
+    fnirsMag: s.fnirsMag,
+  };
+}
+
+function lerpTeachingSensorSnapshot(
+  sm: TeachingSensorSnapshot,
+  tgt: TeachingSensorSnapshot,
+  aRaw: number,
+  aBand: number,
+  aMotion: number,
+) {
+  for (let i = 0; i < 4; i += 1) {
+    sm.raw[i] += aRaw * (tgt.raw[i] - sm.raw[i]);
+  }
+  for (const b of TEACH_BANDS) {
+    sm.bandAbs[b] += aBand * (tgt.bandAbs[b] - sm.bandAbs[b]);
+    sm.bandN[b] += aBand * (tgt.bandN[b] - sm.bandN[b]);
+  }
+  sm.accelMag += aMotion * (tgt.accelMag - sm.accelMag);
+  sm.gyroMag += aMotion * (tgt.gyroMag - sm.gyroMag);
+  sm.ppgMag += aMotion * (tgt.ppgMag - sm.ppgMag);
+  sm.fnirsMag += aMotion * (tgt.fnirsMag - sm.fnirsMag);
+}
+
 export function TeachingCsoundRenderer({
   latestEEG,
   latestBandsAbs,
@@ -232,6 +332,25 @@ export function TeachingCsoundRenderer({
     lastBetaMs: 0,
     lastGammaMs: 0,
   });
+  const teachingTargetsRef = React.useRef<TeachingSensorSnapshot>(emptyTeachingSensorSnapshot());
+  const teachingSmoothedRef = React.useRef<TeachingSensorSnapshot>(emptyTeachingSensorSnapshot());
+  const teachingUiRef = React.useRef<TeachingUiSnapshot>({
+    model: 0,
+    volume: 0.4,
+    transpose: 0,
+    pitchBend: 0,
+    styleFamily: "dry",
+    dryFlavor: 1,
+    musicalFlavor: 0,
+    rhythmicFlavor: 0,
+    scales: BASE_TEACHING_SCALES,
+    instrumentOn: false,
+  });
+  const teachingEdgeRef = React.useRef<TeachingEdgeSnapshot>({
+    teach_thresh: 0.52,
+    teach_edge_beta: 0,
+    teach_edge_gamma: 0,
+  });
   const [heldTeachingKey, setHeldTeachingKey] = React.useState<string | null>(null);
   const [scales, setScales] = React.useState<TeachingScales>(() => ({
     ...BASE_TEACHING_SCALES,
@@ -249,92 +368,11 @@ export function TeachingCsoundRenderer({
 
   const teachGateOpen = instrumentOn || momentaryGateHeld > 0 || midiSustainGate;
 
-  const teachingConsoleRef = React.useRef<HTMLTextAreaElement>(null);
-
   const appendLog = React.useCallback((line: string) => {
     const cleaned = line.trim();
     if (!cleaned) return;
     setLogs((prev) => [...prev.slice(-39), `[Teaching] ${cleaned}`]);
   }, []);
-
-  function copyTeachingLogsViaExecCommand(text: string): boolean {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.setAttribute("readonly", "");
-    ta.style.position = "fixed";
-    ta.style.top = "0";
-    ta.style.left = "0";
-    ta.style.width = "2px";
-    ta.style.height = "2px";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    ta.setSelectionRange(0, text.length);
-    let ok = false;
-    try {
-      ok = document.execCommand("copy");
-    } catch {
-      ok = false;
-    }
-    document.body.removeChild(ta);
-    return ok;
-  }
-
-  async function copyTeachingLogs() {
-    const text = logs.join("\n").trim();
-    if (!text) {
-      appendLog("Console is empty — nothing to copy.");
-      return;
-    }
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText && window.isSecureContext) {
-      try {
-        await navigator.clipboard.writeText(text);
-        appendLog("Copied Teaching console to clipboard.");
-        return;
-      } catch {
-        /* try legacy path */
-      }
-    }
-    if (copyTeachingLogsViaExecCommand(text)) {
-      appendLog("Copied Teaching console to clipboard.");
-      return;
-    }
-    const el = teachingConsoleRef.current;
-    if (el) {
-      el.focus();
-      el.select();
-      appendLog("Press Cmd/Ctrl+C now (console is selected).");
-    } else {
-      appendLog("Copy failed — use Select all, then Cmd/Ctrl+C.");
-    }
-  }
-
-  function selectTeachingConsole() {
-    const el = teachingConsoleRef.current;
-    if (!el) return;
-    el.focus();
-    el.select();
-  }
-
-  function downloadTeachingLogs() {
-    const text = logs.join("\n").trim();
-    if (!text) {
-      appendLog("Console is empty — nothing to download.");
-      return;
-    }
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `neurovis-teaching-csound-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    appendLog("Downloaded console as .txt (check your Downloads folder).");
-  }
 
   React.useEffect(() => {
     return () => {
@@ -352,67 +390,59 @@ export function TeachingCsoundRenderer({
     const selected = access.inputs.get(selectedMidiInputId);
     if (!selected) return;
     selected.onmidimessage = (event: { data?: Uint8Array }) => {
-      if (!event.data) return;
-      const [statusByte = 0, data1 = 0, data2 = 0] = Array.from(event.data);
-      const kind = statusByte & 0xf0;
-      if (kind === 0x90 && data2 > 0) {
-        const transposeFromMidi = clamp(data1 - 60, -24, 24);
-        midiHeldNotesRef.current.add(data1);
-        setTranspose(transposeFromMidi);
-        setHeldTeachingKey(`midi-${data1}`);
-        setMidiSustainGate(true);
-      } else if (kind === 0x80 || (kind === 0x90 && data2 === 0)) {
-        midiHeldNotesRef.current.delete(data1);
-        if (midiHeldNotesRef.current.size === 0) {
-          setHeldTeachingKey(null);
-          setMidiSustainGate(false);
-        } else {
-          const last = Array.from(midiHeldNotesRef.current).at(-1) ?? 60;
-          setTranspose(clamp(last - 60, -24, 24));
-          setHeldTeachingKey(`midi-${last}`);
+      try {
+        if (!event.data) return;
+        const [statusByte = 0, data1 = 0, data2 = 0] = Array.from(event.data);
+        const kind = statusByte & 0xf0;
+        if (kind === 0x90 && data2 > 0) {
+          const transposeFromMidi = clamp(data1 - 60, -24, 24);
+          midiHeldNotesRef.current.add(data1);
+          setTranspose(transposeFromMidi);
+          setHeldTeachingKey(`midi-${data1}`);
+          setMidiSustainGate(true);
+        } else if (kind === 0x80 || (kind === 0x90 && data2 === 0)) {
+          midiHeldNotesRef.current.delete(data1);
+          if (midiHeldNotesRef.current.size === 0) {
+            setHeldTeachingKey(null);
+            setMidiSustainGate(false);
+          } else {
+            const last = Array.from(midiHeldNotesRef.current).at(-1) ?? 60;
+            setTranspose(clamp(last - 60, -24, 24));
+            setHeldTeachingKey(`midi-${last}`);
+          }
+        } else if (kind === 0xb0) {
+          const value = data2 / 127;
+          applyTeachingCc(data1, value);
+          const csound = csoundRef.current;
+          if (csound) {
+            void csound.setControlChannel(`teach_cc${data1}`, value);
+          }
+          const now = performance.now();
+          if (now - lastCcLogRef.current > 500) {
+            appendLog(`Teaching MIDI CC${data1}: ${value.toFixed(3)}`);
+            lastCcLogRef.current = now;
+          }
+        } else if (kind === 0xe0) {
+          const raw14 = data1 + data2 * 128;
+          const value = clamp((raw14 - 8192) / 8192, -1, 1);
+          setTeachingPitchBend(value);
         }
-      } else if (kind === 0xb0) {
-        const value = data2 / 127;
-        applyTeachingCc(data1, value);
-        const csound = csoundRef.current;
-        if (csound) {
-          void csound.setControlChannel(`teach_cc${data1}`, value);
-        }
-        const now = performance.now();
-        if (now - lastCcLogRef.current > 500) {
-          appendLog(`Teaching MIDI CC${data1}: ${value.toFixed(3)}`);
-          lastCcLogRef.current = now;
-        }
-      } else if (kind === 0xe0) {
-        const raw14 = data1 + data2 * 128;
-        const value = clamp((raw14 - 8192) / 8192, -1, 1);
-        setTeachingPitchBend(value);
+      } catch (err) {
+        console.error("[NeuroVis] Teaching MIDI handler:", err);
       }
     };
     appendLog(`Teaching USB MIDI input connected: ${selected.name || "MIDI input"}`);
   }, [appendLog, selectedMidiInputId]);
 
   React.useEffect(() => {
-    const csound = csoundRef.current;
-    if (!csound) return;
-    const betaN = scaledBandNorm("beta", latestBandsAbs, latestBandsRel, scales);
-    const gammaN = scaledBandNorm("gamma", latestBandsAbs, latestBandsRel, scales);
-    const edge = computeTeachingEdgeChannels(
-      betaN,
-      gammaN,
-      teachGateOpen && edgeTriggersEnabled,
-      edgeThreshold,
-      edgeDebounceMs,
-      edgeBetaOn,
-      edgeGammaOn,
-      teachingEdgeRefs.current,
-      typeof performance !== "undefined" ? performance.now() : Date.now(),
-    );
-    void syncTeaching(csound, {
+    teachingTargetsRef.current = buildTeachingSensorSnapshot(
       latestEEG,
       latestBandsAbs,
       latestBandsRel,
       motion,
+      scales,
+    );
+    teachingUiRef.current = {
       model,
       volume,
       transpose,
@@ -423,8 +453,20 @@ export function TeachingCsoundRenderer({
       rhythmicFlavor,
       scales,
       instrumentOn: teachGateOpen,
-      edge,
-    });
+    };
+    const betaN = scaledBandNorm("beta", latestBandsAbs, latestBandsRel, scales);
+    const gammaN = scaledBandNorm("gamma", latestBandsAbs, latestBandsRel, scales);
+    teachingEdgeRef.current = computeTeachingEdgeChannels(
+      betaN,
+      gammaN,
+      teachGateOpen && edgeTriggersEnabled,
+      edgeThreshold,
+      edgeDebounceMs,
+      edgeBetaOn,
+      edgeGammaOn,
+      teachingEdgeRefs.current,
+      typeof performance !== "undefined" ? performance.now() : Date.now(),
+    );
   }, [
     latestEEG,
     latestBandsAbs,
@@ -446,6 +488,32 @@ export function TeachingCsoundRenderer({
     edgeBetaOn,
     edgeGammaOn,
   ]);
+
+  React.useEffect(() => {
+    if (status !== "running") return;
+    let frame = 0;
+    const step = () => {
+      const cs = csoundRef.current;
+      if (cs) {
+        lerpTeachingSensorSnapshot(
+          teachingSmoothedRef.current,
+          teachingTargetsRef.current,
+          TEACH_SMOOTH_RAW,
+          TEACH_SMOOTH_BAND,
+          TEACH_SMOOTH_MOTION,
+        );
+        void applyTeachingToCsound(
+          cs,
+          teachingUiRef.current,
+          teachingSmoothedRef.current,
+          teachingEdgeRef.current,
+        );
+      }
+      frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [status]);
 
   React.useEffect(() => {
     setRollingTrace((prev) => [...prev.slice(-239), selected.normalized]);
@@ -507,7 +575,12 @@ export function TeachingCsoundRenderer({
     try {
       const { Csound } = await import("@csound/browser");
 
-      const csound = await Csound({ useWorker: false, autoConnect: false });
+      const csound = await Csound({
+        useWorker: false,
+        useSPN: false,
+        outputChannelCount: 2,
+        autoConnect: false,
+      });
       if (!csound) throw new Error("Csound WASM failed to initialize");
       csoundRef.current = csound;
       await yieldCsoundInstanceReady();
@@ -552,11 +625,16 @@ export function TeachingCsoundRenderer({
         teachingEdgeRefs.current,
         typeof performance !== "undefined" ? performance.now() : Date.now(),
       );
-      await syncTeaching(csound, {
+      const sensorSnap = buildTeachingSensorSnapshot(
         latestEEG,
         latestBandsAbs,
         latestBandsRel,
         motion,
+        scales,
+      );
+      teachingTargetsRef.current = sensorSnap;
+      teachingSmoothedRef.current = cloneTeachingSensorSnapshot(sensorSnap);
+      teachingUiRef.current = {
         model,
         volume,
         transpose,
@@ -567,8 +645,9 @@ export function TeachingCsoundRenderer({
         rhythmicFlavor,
         scales,
         instrumentOn: true,
-        edge: edgeStart,
-      });
+      };
+      teachingEdgeRef.current = edgeStart;
+      await applyTeachingToCsound(csound, teachingUiRef.current, teachingSmoothedRef.current, edgeStart);
       await csound.readScore(
         "f 1 0 4096 10 1\nf 0 86400\ni 907 0 86400\ni 990 0 86400\ni 910 0 86400\n",
       );
@@ -599,7 +678,7 @@ export function TeachingCsoundRenderer({
       appendLog("Teaching instrument gate opened. Use Instrument Off or Space to mute it.");
       setStatus("running");
     } catch (error) {
-      appendLog(`Start error: ${error instanceof Error ? error.message : String(error)}`);
+      appendLog(`Start error: ${formatCaught(error)}`);
       const cs = csoundRef.current;
       csoundRef.current = null;
       try {
@@ -679,7 +758,7 @@ export function TeachingCsoundRenderer({
       await csound.stop();
       await csound.destroy();
     } catch (error) {
-      appendLog(`Stop error: ${error instanceof Error ? error.message : String(error)}`);
+      appendLog(`Stop error: ${formatCaught(error)}`);
     } finally {
       setLaunchkeyHeldNotes(new Set());
       audioContextRef.current = null;
@@ -792,7 +871,7 @@ export function TeachingCsoundRenderer({
       appendLog("Teaching USB MIDI access enabled.");
     } catch (error) {
       setMidiStatus("error");
-      appendLog(`Teaching MIDI error: ${error instanceof Error ? error.message : String(error)}`);
+      appendLog(`Teaching MIDI error: ${formatCaught(error)}`);
     }
   }
 
@@ -1274,54 +1353,19 @@ export function TeachingCsoundRenderer({
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <SignalTrace label="Raw EEG channels" values={demoSignals.rawChannels} range={250} />
-        <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-zinc-400">
-              Teaching Csound Console
-            </div>
-            <div className="flex flex-wrap items-center gap-1">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                leftIcon={<Clipboard className="h-3.5 w-3.5" />}
-                onClick={() => void copyTeachingLogs()}
-              >
-                Copy
-              </Button>
-              <Button type="button" size="sm" variant="outline" onClick={selectTeachingConsole}>
-                Select all
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                leftIcon={<Download className="h-3.5 w-3.5" />}
-                onClick={downloadTeachingLogs}
-              >
-                .txt
-              </Button>
-            </div>
-          </div>
-          <textarea
-            ref={teachingConsoleRef}
-            readOnly
-            spellCheck={false}
-            aria-label="Teaching Csound console log"
-            className="h-40 w-full cursor-text resize-none overflow-auto whitespace-pre-wrap border-0 bg-zinc-900/80 p-2 font-mono text-[11px] leading-5 text-zinc-400 outline-none ring-1 ring-inset ring-zinc-800 focus:ring-emerald-500/50"
-            value={logs.length ? logs.join("\n") : "Teaching Csound messages will appear here."}
-          />
-        </div>
+        <CopyableConsole
+          title="Teaching Csound Console"
+          text={logs.join("\n")}
+          emptyPlaceholder="Teaching Csound messages will appear here."
+          downloadBasename="neurovis-teaching-csound"
+          ariaLabel="Teaching Csound console log"
+          onNotify={(msg) => appendLog(msg)}
+          textareaClassName="h-40"
+        />
       </div>
     </div>
   );
 }
-
-type TeachingEdgeSnapshot = {
-  teach_thresh: number;
-  teach_edge_beta: number;
-  teach_edge_gamma: number;
-};
 
 type TeachingEdgeRefsState = {
   prevBeta: number;
@@ -1405,72 +1449,80 @@ function computeTeachingEdgeChannels(
   };
 }
 
-async function syncTeaching(
+function buildTeachingSensorSnapshot(
+  latestEEG: EEGMessage | null,
+  latestBandsAbs: BandPowers | null,
+  latestBandsRel: BandPowers | null,
+  motion: MotionStreams,
+  scales: TeachingScales,
+): TeachingSensorSnapshot {
+  const raw = latestEEG?.raw ?? [];
+  const accel = motion.accel ?? [];
+  const gyro = motion.gyro ?? [];
+  const ppg = motion.ppg ?? [];
+  const fnirs = motion.fnirs ?? [];
+  const bandAbs = {} as Record<BandName, number>;
+  const bandN = {} as Record<BandName, number>;
+  for (const band of TEACH_BANDS) {
+    bandAbs[band] = latestBandsAbs?.[band] ?? -2.5;
+    bandN[band] = scaledBandNorm(band, latestBandsAbs, latestBandsRel, scales);
+  }
+  return {
+    raw: [
+      clamp(Number(raw[0]) || 0, -1200, 1200),
+      clamp(Number(raw[1]) || 0, -1200, 1200),
+      clamp(Number(raw[2]) || 0, -1200, 1200),
+      clamp(Number(raw[3]) || 0, -1200, 1200),
+    ],
+    bandAbs,
+    bandN,
+    accelMag: clamp(accelFeature(accel) * scales.motion, 0, 8),
+    gyroMag: clamp(gyroFeature(gyro) * scales.motion, 0, 8),
+    ppgMag: clamp(ppgFeature(ppg) * scales.ppg, 0, 8),
+    fnirsMag: clamp(fnirsFeature(fnirs) * scales.fnirs, 0, 8),
+  };
+}
+
+async function applyTeachingToCsound(
   csound: CsoundObj,
-  data: {
-    latestEEG: EEGMessage | null;
-    latestBandsAbs: BandPowers | null;
-    latestBandsRel: BandPowers | null;
-    motion: MotionStreams;
-    model: number;
-    volume: number;
-    transpose: number;
-    pitchBend: number;
-    styleFamily: "dry" | "musical" | "rhythmic";
-    dryFlavor: 0 | 1 | 2;
-    musicalFlavor: 0 | 1 | 2;
-    rhythmicFlavor: 0 | 1 | 2;
-    scales: TeachingScales;
-    instrumentOn: boolean;
-    edge: TeachingEdgeSnapshot;
-  },
+  ui: TeachingUiSnapshot,
+  sensors: TeachingSensorSnapshot,
+  edge: TeachingEdgeSnapshot,
 ) {
-  const raw = data.latestEEG?.raw ?? [];
-  const accel = data.motion.accel ?? [];
-  const gyro = data.motion.gyro ?? [];
-  const ppg = data.motion.ppg ?? [];
-  const fnirs = data.motion.fnirs ?? [];
   const styleVoice =
-    data.styleFamily === "dry"
-      ? data.dryFlavor
-      : data.styleFamily === "musical"
-        ? data.musicalFlavor
-        : data.rhythmicFlavor;
-  const familyIdx =
-    data.styleFamily === "dry" ? 0 : data.styleFamily === "musical" ? 1 : 2;
-  const transposeOut = clamp(data.transpose + data.pitchBend * 12, -48, 48);
+    ui.styleFamily === "dry"
+      ? ui.dryFlavor
+      : ui.styleFamily === "musical"
+        ? ui.musicalFlavor
+        : ui.rhythmicFlavor;
+  const familyIdx = ui.styleFamily === "dry" ? 0 : ui.styleFamily === "musical" ? 1 : 2;
+  const transposeOut = clamp(ui.transpose + ui.pitchBend * 12, -48, 48);
   const writes: Promise<unknown>[] = [
-    csound.setControlChannel("teach_model", data.model),
-    csound.setControlChannel("teach_volume", data.volume),
+    csound.setControlChannel("teach_model", ui.model),
+    csound.setControlChannel("teach_volume", ui.volume),
     csound.setControlChannel("teach_transpose", transposeOut),
     csound.setControlChannel("teach_style_family", familyIdx),
     csound.setControlChannel("teach_style_voice", styleVoice),
-    csound.setControlChannel("teach_raw_scale", data.scales.raw),
-    csound.setControlChannel("teach_gate", data.instrumentOn ? 1 : 0),
-    csound.setControlChannel("teach_thresh", data.edge.teach_thresh),
-    csound.setControlChannel("teach_edge_beta", data.edge.teach_edge_beta),
-    csound.setControlChannel("teach_edge_gamma", data.edge.teach_edge_gamma),
+    csound.setControlChannel("teach_raw_scale", ui.scales.raw),
+    csound.setControlChannel("teach_gate", ui.instrumentOn ? 1 : 0),
+    csound.setControlChannel("teach_thresh", edge.teach_thresh),
+    csound.setControlChannel("teach_edge_beta", edge.teach_edge_beta),
+    csound.setControlChannel("teach_edge_gamma", edge.teach_edge_gamma),
   ];
 
   for (let i = 0; i < 4; i += 1) {
-    writes.push(csound.setControlChannel(`teach_raw_${i + 1}`, clamp(Number(raw[i]) || 0, -1200, 1200)));
+    writes.push(csound.setControlChannel(`teach_raw_${i + 1}`, sensors.raw[i]));
   }
 
-  for (const band of ["delta", "theta", "alpha", "beta", "gamma"] as BandName[]) {
-    const abs = data.latestBandsAbs?.[band] ?? -2.5;
-    writes.push(csound.setControlChannel(`teach_${band}`, abs));
-    writes.push(
-      csound.setControlChannel(
-        `teach_${band}_n`,
-        scaledBandNorm(band, data.latestBandsAbs, data.latestBandsRel, data.scales),
-      ),
-    );
+  for (const band of TEACH_BANDS) {
+    writes.push(csound.setControlChannel(`teach_${band}`, sensors.bandAbs[band]));
+    writes.push(csound.setControlChannel(`teach_${band}_n`, sensors.bandN[band]));
   }
 
-  writes.push(csound.setControlChannel("teach_accel_mag", clamp(accelFeature(accel) * data.scales.motion, 0, 8)));
-  writes.push(csound.setControlChannel("teach_gyro_mag", clamp(gyroFeature(gyro) * data.scales.motion, 0, 8)));
-  writes.push(csound.setControlChannel("teach_ppg_mag", clamp(ppgFeature(ppg) * data.scales.ppg, 0, 8)));
-  writes.push(csound.setControlChannel("teach_fnirs_mag", clamp(fnirsFeature(fnirs) * data.scales.fnirs, 0, 8)));
+  writes.push(csound.setControlChannel("teach_accel_mag", sensors.accelMag));
+  writes.push(csound.setControlChannel("teach_gyro_mag", sensors.gyroMag));
+  writes.push(csound.setControlChannel("teach_ppg_mag", sensors.ppgMag));
+  writes.push(csound.setControlChannel("teach_fnirs_mag", sensors.fnirsMag));
 
   await Promise.all(writes);
 }

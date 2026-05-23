@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Activity, Download, Eraser, Keyboard } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
+import { CopyableConsole } from "@/components/ui/CopyableConsole";
 import {
   downloadResearchRollingExport,
   defaultSessionDate,
@@ -17,6 +18,18 @@ import {
 import { inferResearchDeviceProfile } from "@/lib/researchDeviceProfile";
 import { useNeuroStore } from "@/lib/store";
 import type { ResearchEventSource } from "@/lib/researchTypes";
+
+const RESEARCH_HTTP_MARKER_CURL_EXAMPLES = `# Direct to Node bridge (WEB_PORT, default 3000)
+curl -sS -X POST http://127.0.0.1:3000/api/research-event \\
+  -H 'Content-Type: application/json' \\
+  -d '{"label":"stim_on","detail":"trial 3"}'
+
+# Via Next (default http://localhost:3001)
+curl -sS -X POST http://127.0.0.1:3001/api/research-event \\
+  -H 'Content-Type: application/json' \\
+  -d '{"label":"stim_on"}'
+
+# Python OpenBCI server → Node UI: set NEUROVIS_RESEARCH_EVENT_URL then POST its /api/research-event`;
 
 const CHAN_COLORS = [
   "rgba(52,211,153,0.9)",
@@ -284,19 +297,15 @@ export function ResearchEventLab() {
             <code className="text-zinc-300">RESEARCH_EVENT_SECRET</code> + header{" "}
             <code className="text-zinc-300">X-NeuroVis-Research-Token</code>.
           </p>
-          <pre className="mt-2 overflow-x-auto rounded border border-zinc-800 bg-zinc-900/80 p-2 font-mono text-[10px] text-emerald-200/90">
-            {`# Direct to Node bridge (WEB_PORT, default 3000)
-curl -sS -X POST http://127.0.0.1:3000/api/research-event \\
-  -H 'Content-Type: application/json' \\
-  -d '{"label":"stim_on","detail":"trial 3"}'
-
-# Via Next (default http://localhost:3001)
-curl -sS -X POST http://127.0.0.1:3001/api/research-event \\
-  -H 'Content-Type: application/json' \\
-  -d '{"label":"stim_on"}'
-
-# Python OpenBCI server → Node UI: set NEUROVIS_RESEARCH_EVENT_URL then POST its /api/research-event`}
-          </pre>
+          <CopyableConsole
+            title="Example requests"
+            text={RESEARCH_HTTP_MARKER_CURL_EXAMPLES}
+            emptyPlaceholder=""
+            downloadBasename="neurovis-research-event-curl"
+            ariaLabel="Research event HTTP curl examples"
+            className="mt-2 border-zinc-800 bg-zinc-900/80"
+            textareaClassName="min-h-[6rem] h-auto text-[10px] text-emerald-200/90"
+          />
         </details>
         <div className="flex flex-wrap items-end gap-3 text-[11px]">
           <label className="text-zinc-400">

@@ -12,6 +12,23 @@ body {
   background: #09090b;
 }
 
+/* Skin tint on <html> too — visible in overscroll / before body paints; pairs with Settings UI skin. */
+html[data-nv-skin="studio"] {
+  background-color: #09090b;
+}
+html[data-nv-skin="sand"] {
+  background-color: #0b0a07;
+}
+html[data-nv-skin="copper"] {
+  background-color: #0b0707;
+}
+html[data-nv-skin="olive"] {
+  background-color: #070b08;
+}
+html[data-nv-skin="slate"] {
+  background-color: #070a0f;
+}
+
 body {
   font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
   -webkit-font-smoothing: antialiased;
@@ -35,32 +52,38 @@ body {
     #09090b;
 }
 
-/* UI skins: make the browser tab unmistakable (Settings → UI skin). */
-html[data-nv-skin="studio"] .bg-app {
+/* UI skins: make the browser tab unmistakable (Settings → UI skin).
+   Match `html` and `body.bg-app` — AppShell sets `data-nv-skin` on both so scoped CSS wins over base `.bg-app`. */
+html[data-nv-skin="studio"] .bg-app,
+body[data-nv-skin="studio"].bg-app {
   background:
     radial-gradient(1200px 600px at 10% -10%, rgba(99, 102, 241, 0.08), transparent 60%),
     radial-gradient(1000px 500px at 110% 10%, rgba(16, 185, 129, 0.06), transparent 60%),
     #09090b;
 }
-html[data-nv-skin="sand"] .bg-app {
+html[data-nv-skin="sand"] .bg-app,
+body[data-nv-skin="sand"].bg-app {
   background:
     radial-gradient(1200px 650px at 10% -10%, rgba(245, 158, 11, 0.10), transparent 60%),
     radial-gradient(900px 520px at 110% 10%, rgba(234, 179, 8, 0.08), transparent 60%),
     #0b0a07;
 }
-html[data-nv-skin="copper"] .bg-app {
+html[data-nv-skin="copper"] .bg-app,
+body[data-nv-skin="copper"].bg-app {
   background:
     radial-gradient(1200px 650px at 10% -10%, rgba(244, 63, 94, 0.10), transparent 60%),
     radial-gradient(900px 520px at 110% 10%, rgba(249, 115, 22, 0.08), transparent 60%),
     #0b0707;
 }
-html[data-nv-skin="olive"] .bg-app {
+html[data-nv-skin="olive"] .bg-app,
+body[data-nv-skin="olive"].bg-app {
   background:
     radial-gradient(1200px 650px at 10% -10%, rgba(34, 197, 94, 0.10), transparent 60%),
     radial-gradient(900px 520px at 110% 10%, rgba(132, 204, 22, 0.08), transparent 60%),
     #070b08;
 }
-html[data-nv-skin="slate"] .bg-app {
+html[data-nv-skin="slate"] .bg-app,
+body[data-nv-skin="slate"].bg-app {
   background:
     radial-gradient(1200px 650px at 10% -10%, rgba(148, 163, 184, 0.10), transparent 60%),
     radial-gradient(900px 520px at 110% 10%, rgba(59, 130, 246, 0.07), transparent 60%),

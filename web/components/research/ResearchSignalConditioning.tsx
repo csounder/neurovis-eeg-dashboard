@@ -6,6 +6,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { BAND_EDGE_PRESET_OPTIONS } from "@/lib/bandEdgePreset";
 import { EEG_TRACE_OPTIONS } from "@/lib/eegTraceSourceInfo";
+import { formatCaught } from "@/lib/formatCaught";
 import { useNeuroStore } from "@/lib/store";
 import type { BandEdgePreset } from "@/lib/types";
 
@@ -188,7 +189,7 @@ export function ResearchSignalConditioning() {
       setDsp(d as DspConfig);
       setErr(null);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Status fetch failed");
+      setErr(formatCaught(e));
     }
   }, []);
 
@@ -209,7 +210,7 @@ export function ResearchSignalConditioning() {
       await fn();
       await refresh();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(formatCaught(e));
     } finally {
       setBusy(null);
     }

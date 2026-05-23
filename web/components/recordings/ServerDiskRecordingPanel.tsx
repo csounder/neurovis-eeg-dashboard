@@ -3,6 +3,7 @@
 import * as React from "react";
 import { HardDrive, Radio, Square } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
+import { CopyableConsole } from "@/components/ui/CopyableConsole";
 
 type DiskStatus = {
   active: boolean;
@@ -177,9 +178,15 @@ export function ServerDiskRecordingPanel() {
         {errorMsg ? <p className="text-[11px] text-rose-400/90">{errorMsg}</p> : null}
 
         {lastResponse ? (
-          <pre className="max-h-32 overflow-auto rounded border border-zinc-800 bg-zinc-950/50 p-2 font-mono text-[10px] text-zinc-500 whitespace-pre-wrap">
-            {lastResponse}
-          </pre>
+          <CopyableConsole
+            title="Last response"
+            text={lastResponse}
+            emptyPlaceholder=""
+            downloadBasename="neurovis-disk-api-response"
+            ariaLabel="Server disk recording API response"
+            textareaClassName="max-h-32 min-h-[3rem] h-auto text-[10px] text-zinc-500"
+            className="bg-zinc-950/50"
+          />
         ) : null}
       </CardBody>
     </Card>

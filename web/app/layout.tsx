@@ -3,6 +3,10 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/shell/AppShell";
 import { ChunkLoadRecovery } from "@/components/shell/ChunkLoadRecovery";
+import { UI_SKIN_LS_KEY } from "@/lib/uiSkinStorage";
+
+/** Runs before React chunks — if `_next` 404s, LS-backed skin still applies on reload. */
+const UI_SKIN_BOOTSTRAP = `(function(){try{var k=${JSON.stringify(UI_SKIN_LS_KEY)};var a=["studio","sand","copper","olive","slate"];var v=localStorage.getItem(k);if(!v)return;if(a.indexOf(v)<0)return;document.documentElement.setAttribute("data-nv-skin",v);var b=document.body;if(b)b.setAttribute("data-nv-skin",v);}catch(e){}})();`;
 
 const fontSans = Inter({
   subsets: ["latin"],
@@ -48,6 +52,7 @@ export default function RootLayout({
         className="bg-app min-h-screen font-sans text-zinc-200 antialiased"
         suppressHydrationWarning
       >
+        <script dangerouslySetInnerHTML={{ __html: UI_SKIN_BOOTSTRAP }} />
         <ChunkLoadRecovery />
         <AppShell>{children}</AppShell>
       </body>

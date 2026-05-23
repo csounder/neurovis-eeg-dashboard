@@ -84,9 +84,9 @@ const PALETTES = [
   "Partch/Carlos-ish",
 ];
 
-export type V12WorkstationVariant = "v12" | "v13" | "v14" | "v15" | "v16" | "v17";
+export type V12WorkstationVariant = "v12" | "v13" | "v14" | "v15" | "v16" | "v17" | "v18";
 
-const WORKSTATION_SLUGS: V12WorkstationVariant[] = ["v12", "v13", "v14", "v15", "v16", "v17"];
+const WORKSTATION_SLUGS: V12WorkstationVariant[] = ["v12", "v13", "v14", "v15", "v16", "v17", "v18"];
 
 type WorkstationDefaults = {
   harmonyBand: BandName;
@@ -188,6 +188,20 @@ const VARIANT_DEFAULTS: Record<V12WorkstationVariant, WorkstationDefaults> = {
     melodyVolume: 0.58,
     melodyComplexity: 0.58,
   },
+  v18: {
+    harmonyBand: "alpha",
+    bassDriver: "delta",
+    melodyDriver: "gamma",
+    rhythmDriver: "theta",
+    registerDriver: "beta",
+    responseMode: 0,
+    orchestration: 2,
+    motion: 0,
+    palette: 1,
+    cc1Mode: "volume",
+    melodyVolume: 0.6,
+    melodyComplexity: 0.48,
+  },
 };
 
 const VARIANT_META: Record<
@@ -240,6 +254,14 @@ const VARIANT_META: Record<
     badge: "v17",
     matrixTitle: "V17 Control Matrix",
     rendererTitle: "Csound V12 Renderer (v17 preset)",
+  },
+  v18: {
+    title: "V18 · Calm contrast bench",
+    subtitle:
+      "Low-motion preset: alpha harmony, theta rhythm lane, Dark orchestration, Pop palette, Smooth response — wide-open defaults for A/B against denser V15–V17 lanes.",
+    badge: "v18",
+    matrixTitle: "V18 Control Matrix",
+    rendererTitle: "Csound V12 Renderer (v18 preset)",
   },
 };
 
@@ -429,7 +451,20 @@ export function V12WorkstationPage({ variant }: { variant: V12WorkstationVariant
         </CardHeader>
         <CardBody>
           <p className="mb-3 text-xs leading-5 text-zinc-400">
-            MIDI CC1, CC21–28, EEG streams, and per-route defaults are documented in{" "}
+            NeuroVis&apos;s main modes are{" "}
+            <Link href="/teaching" className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
+              Teaching
+            </Link>
+            ,{" "}
+            <Link href="/concert" className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
+              Concert
+            </Link>
+            , and{" "}
+            <Link href="/research" className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
+              Research
+            </Link>
+            . This V12 workstation is an expansion lane for the control matrix and optional browser Csound demo.
+            Matrix defaults and MIDI CC docs:{" "}
             <code className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300/90">
               docs/V12-V17-WORKSTATION-MODES.md
             </code>
@@ -670,11 +705,11 @@ export function V12WorkstationPage({ variant }: { variant: V12WorkstationVariant
         <CardHeader>
           <CardTitle
             icon={<Music2 className="h-4 w-4" />}
-            description="Local access to the V12 CSD plus browser/online Csound options."
+            description="Optional browser Csound demo below. Desktop .csd download is legacy/optional for CsoundQt + OSC — not required for Teaching, Concert, or Research."
             actions={
-              <a href="/api/csound/v12" download="MuscV12-EEG-Control-Matrix-Cursor.csd">
+              <a href="/api/csound/v12">
                 <Button size="sm" leftIcon={<Download className="h-3.5 w-3.5" />}>
-                  Download CSD
+                  Download CSD (optional)
                 </Button>
               </a>
             }
@@ -684,6 +719,7 @@ export function V12WorkstationPage({ variant }: { variant: V12WorkstationVariant
         </CardHeader>
         <CardBody className="space-y-4">
           <CsoundV12Renderer
+            workstationId={variant}
             controls={{
               harmonyBand,
               bassDriver,
@@ -714,7 +750,9 @@ export function V12WorkstationPage({ variant }: { variant: V12WorkstationVariant
                 <Radio className="h-4 w-4 text-emerald-400" />
                 Open local V12 CSD
               </div>
-              <p className="mt-1 text-xs text-zinc-500">Served by NeuroVis from your Desktop CSD file.</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Served from your local Muse CSD library (set NEUROVIS_V12_CSD_PATH to override).
+              </p>
             </a>
             <a
               className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 text-sm text-zinc-200 hover:border-emerald-500/50"
@@ -746,9 +784,19 @@ export function V12WorkstationPage({ variant }: { variant: V12WorkstationVariant
             />
           )}
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-100/80">
-            Browser mode runs the V12 CSD through Csound WASM and replaces desktop UDP OSC
-            with NeuroVis control channels in the browser Csound engine. For the original desktop OSC/MIDI
-            workflow, keep using the downloaded CSD in CsoundQt or the Csound Web IDE.
+            Start Audio here compiles a lightweight in-browser orchestra (WASM). For lectures use{" "}
+            <Link href="/teaching" className="font-medium text-amber-50 underline underline-offset-2">
+              Teaching
+            </Link>
+            , for stage visuals + audio use{" "}
+            <Link href="/concert" className="font-medium text-amber-50 underline underline-offset-2">
+              Concert
+            </Link>
+            , for capture and analysis use{" "}
+            <Link href="/research" className="font-medium text-amber-50 underline underline-offset-2">
+              Research
+            </Link>
+            . The optional CSD download is only if you still run desktop CsoundQt with OSC.
           </div>
         </CardBody>
       </Card>

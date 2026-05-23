@@ -1,9 +1,10 @@
 /**
  * Smoothed RMS from the browser Csound output (AnalyserNode).
- * Read from the concert canvas rAF — no React state per frame.
+ * Timer-driven so levels update even when `requestAnimationFrame` is throttled (background tabs,
+ * some automation), keeping the concert canvas + Playwright probes consistent.
  */
 
-let rafId = 0;
+let pollId: number | undefined;
 let level = 0;
 
 export function getConcertAudioLevel(): number {
@@ -11,14 +12,14 @@ export function getConcertAudioLevel(): number {
 }
 
 export function stopConcertAudioMeter(): void {
-  if (rafId) {
-    cancelAnimationFrame(rafId);
-    rafId = 0;
+  if (pollId !== undefined) {
+    window.clearInterval(pollId);
+    pollId = undefined;
   }
   level = 0;
 }
 
-/** Call after `source.connect(analyser); analyser.connect(destination)`. */
+/** Call after `source.connect(analyser)` (tap only; analyser need not connect to destination). */
 export function attachConcertAudioMeter(analyser: AnalyserNode): void {
   stopConcertAudioMeter();
   const buffer = new Float32Array(analyser.fftSize);
@@ -35,7 +36,7 @@ export function attachConcertAudioMeter(analyser: AnalyserNode): void {
     const inst = Math.min(1, rms * 5.5);
     smooth = smooth * 0.88 + inst * 0.12;
     level = smooth;
-    rafId = requestAnimationFrame(tick);
   };
-  rafId = requestAnimationFrame(tick);
+  tick();
+  pollId = window.setInterval(tick, 32) as number;
 }

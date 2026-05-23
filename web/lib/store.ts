@@ -35,6 +35,7 @@ import {
   RESEARCH_TIMELINE_MAX,
 } from "./researchTypes";
 import type { SimProfile } from "./simulator";
+import { UI_SKIN_LS_KEY } from "./uiSkinStorage";
 
 export type ConnectionStatus =
   | "idle"
@@ -213,7 +214,6 @@ function pushRing<T>(arr: T[], value: T, max: number): T[] {
 }
 
 const EEG_TRACE_LS_KEY = "neurovis.eegTraceSource";
-const UI_SKIN_LS_KEY = "neurovis.uiSkin";
 
 const EEG_TRACE_DEFAULT: EegTraceSource = "browser_dsp";
 const UI_SKIN_DEFAULT: NeuroState["uiSkin"] = "studio";

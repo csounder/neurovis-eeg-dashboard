@@ -1,4 +1,5 @@
 export const RESEARCH_SECTION_NAV = [
+  { id: "research-ai", label: "AI · Replicate" },
   { id: "research-overview", label: "Overview" },
   { id: "research-capture", label: "Capture" },
   { id: "research-analysis", label: "QC & analysis" },

@@ -2,6 +2,7 @@
 
 import { ChevronDown, Radio, TimerReset } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
+import { CopyableConsole } from "@/components/ui/CopyableConsole";
 import { ScaleControl } from "@/components/ui/ScaleControl";
 import { ResearchBlockProtocol } from "@/components/research/ResearchBlockProtocol";
 import { ResearchCapturePanel } from "@/components/research/ResearchCapturePanel";
@@ -15,6 +16,7 @@ import { ResearchCytonAcquisitionCallout } from "@/components/research/ResearchC
 import { ResearchDeviceContextPanel } from "@/components/research/ResearchDeviceContextPanel";
 import { ResearchElectrodeQualityCard } from "@/components/research/ResearchElectrodeQualityCard";
 import { ResearchEventLab } from "@/components/research/ResearchEventLab";
+import { ResearchGeminiAnalysis } from "@/components/research/ResearchGeminiAnalysis";
 import { ResearchMethodsSamplingCard } from "@/components/research/ResearchMethodsSamplingCard";
 import { ResearchFnirsMultiTrace } from "@/components/research/ResearchFnirsMultiTrace";
 import { ResearchContactTrendStrip } from "@/components/research/ResearchContactTrendStrip";
@@ -102,6 +104,10 @@ export default function ResearchPage() {
           </a>
         ))}
       </nav>
+
+      <div id="research-ai" className="scroll-mt-28">
+        <ResearchGeminiAnalysis />
+      </div>
 
       <div id="research-overview" className="scroll-mt-28 space-y-6">
         <ResearchSessionHeaderCard
@@ -641,9 +647,15 @@ export default function ResearchPage() {
           <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open:rotate-180" aria-hidden />
         </summary>
         <div className="border-t border-zinc-800/90 px-4 pb-4 pt-2">
-          <pre className="max-h-[520px] overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-4 font-mono text-[11px] leading-5 text-zinc-400">
-            {JSON.stringify(snapshot, null, 2)}
-          </pre>
+          <CopyableConsole
+            title="Snapshot JSON"
+            text={JSON.stringify(snapshot, null, 2)}
+            emptyPlaceholder="{}"
+            downloadBasename="neurovis-research-snapshot"
+            ariaLabel="Research data snapshot JSON"
+            textareaClassName="max-h-[520px] min-h-[200px] h-auto"
+            className="border-zinc-800/90 bg-zinc-950/60"
+          />
         </div>
       </details>
     </div>

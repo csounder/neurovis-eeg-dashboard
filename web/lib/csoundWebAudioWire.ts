@@ -2,6 +2,30 @@ import type { CsoundObj } from "@csound/browser";
 import { attachConcertAudioMeter } from "@/lib/concertAudioMeter";
 
 /**
+ * Connect Csound's output for hearing + optional RMS tap.
+ * Always use a **direct** `node → destination` path for playback. The meter uses a parallel branch:
+ * `node → analyser → gain(0) → destination` so Chrome pulls the analyser (orphan analysers often
+ * stay zero in `getFloatTimeDomainData`). Playback stays unchanged vs `node → destination` alone.
+ */
+function connectCsoundOutputGraph(
+  node: AudioNode,
+  audioContext: AudioContext,
+  concertMeter: boolean,
+): void {
+  node.connect(audioContext.destination);
+  if (concertMeter) {
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.55;
+    node.connect(analyser);
+    const silent = audioContext.createGain();
+    silent.gain.value = 0;
+    analyser.connect(silent).connect(audioContext.destination);
+    attachConcertAudioMeter(analyser);
+  }
+}
+
+/**
  * With `autoConnect: false`, the Csound AudioWorkletNode is not connected until we
  * attach it. Wiring **before** `csound.start()` avoids engines that begin realtime
  * performance with no-pull / silent output when the graph is rewired only after start.
@@ -27,20 +51,13 @@ export async function wireCsoundBeforeStart(
         continue;
       }
 
-      if (opts.concertMeter) {
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 512;
-        analyser.smoothingTimeConstant = 0.55;
-        node.connect(analyser);
-        analyser.connect(audioContext.destination);
-        attachConcertAudioMeter(analyser);
-      } else {
-        node.connect(audioContext.destination);
-      }
+      connectCsoundOutputGraph(node, audioContext, opts.concertMeter);
 
       await audioContext.resume().catch(() => {});
 
-      const chain = opts.concertMeter ? "node → analyser → destination" : "node → destination";
+      const chain = opts.concertMeter
+        ? "node → destination (playback) + node → analyser → gain(0) → destination (meter pull)"
+        : "node → destination";
       log(
         attempt > 0
           ? `${opts.logLabel}: ${chain} before start() (attempt ${attempt + 1}).`
@@ -79,18 +96,11 @@ export async function rewireCsoundAfterStart(
     } catch {
       /* no outgoing edges */
     }
-    if (opts.concertMeter) {
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.55;
-      node.connect(analyser);
-      analyser.connect(audioContext.destination);
-      attachConcertAudioMeter(analyser);
-    } else {
-      node.connect(audioContext.destination);
-    }
+    connectCsoundOutputGraph(node, audioContext, opts.concertMeter);
     await audioContext.resume().catch(() => {});
-    const chain = opts.concertMeter ? "node → analyser → destination" : "node → destination";
+    const chain = opts.concertMeter
+      ? "node → destination (playback) + node → analyser → gain(0) → destination (meter pull)"
+      : "node → destination";
     log(`${opts.logLabel}: ${chain} after start() (output rewired).`);
     return audioContext;
   } catch (err) {
