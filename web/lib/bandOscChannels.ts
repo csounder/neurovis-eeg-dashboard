@@ -3,7 +3,7 @@ import type { BandName, BandPowers } from "./types";
 /**
  * Build the four Muse-style floats for `/prefix/elements/{band}_absolute`.
  * When per-channel bandpass traces are available (simulator / future DSP path),
- * each channel gets a distinct value; otherwise repeats the scalar (legacy).
+ * each channel gets a distinct value; otherwise repeats the scalar (Mind Monitor).
  */
 export function elementsBandAbsoluteArgs(
   band: BandName,
@@ -34,4 +34,23 @@ export function elementsBandRelativeArgs(
   const e = trace.map((x) => x * x + 1e-12);
   const s = e.reduce((a, b) => a + b, 0);
   return e.map((x) => (x / s) * rb);
+}
+
+/** Simulator demo absolute (−10 … +6); browser sim only — server uses bandOscChannels.js. */
+export function oscAbsoluteFromRelative(
+  relative: BandPowers,
+  band: BandName,
+): number {
+  const r = relative[band];
+  if (!Number.isFinite(r)) return 0;
+  return -10 + r * 20;
+}
+
+export function oscAbsoluteMap(relative: BandPowers): BandPowers {
+  const bands: BandName[] = ["delta", "theta", "alpha", "beta", "gamma"];
+  const out = { ...relative };
+  for (const b of bands) {
+    out[b] = oscAbsoluteFromRelative(relative, b);
+  }
+  return out;
 }

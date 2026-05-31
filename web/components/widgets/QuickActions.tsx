@@ -203,6 +203,7 @@ export function QuickActions() {
             onClick={() =>
               run("start", async () => {
                 await api.start();
+                await api.setDspConfig({ oscSending: true }).catch(() => {});
                 setStreamArmed(true);
               })
             }

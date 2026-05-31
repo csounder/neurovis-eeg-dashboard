@@ -13,6 +13,12 @@ const path = require("path");
 require("dotenv").config();
 
 const sessionDisk = require("./server-session-disk");
+const {
+  elementsBandAbsoluteArgs,
+  elementsBandAbsoluteArgsFromChannels,
+  elementsBandRelativeArgs,
+  oscFloatArgs,
+} = require("./bandOscChannels");
 
 const {
   DSPPipeline,
@@ -637,13 +643,14 @@ function calculateBandPowersFromEEG() {
   // Uses live EEG ring buffer: prefer DSP-conditioned µV (bandpass/etc.) so δ is not inflated
   // by raw slow drift when server highpass matches `settings.bandpassLo` (default 1 Hz).
   try {
+    const minSamples = 64;
     const spectralReady =
       eegSpectralBuffer &&
       eegSpectralBuffer.length >= 4 &&
-      eegSpectralBuffer[0].length >= 128;
+      eegSpectralBuffer[0].length >= minSamples;
     const srcBuf = spectralReady ? eegSpectralBuffer : eegBuffer;
 
-    if (!srcBuf || srcBuf.length < 4 || srcBuf[0].length < 128) {
+    if (!srcBuf || srcBuf.length < 4 || srcBuf[0].length < minSamples) {
       return null;
     }
 
@@ -657,16 +664,19 @@ function calculateBandPowersFromEEG() {
     };
 
     const n = Math.min(128, ...srcBuf.slice(0, 4).map((buf) => buf.length));
-    if (n < 128) return null;
+    if (n < minSamples) return null;
 
     const sampleRate = 256;
+    /** Per-channel integrated power per band (for Mind Monitor 4-float absolute OSC). */
+    const bandIntegratedByCh = {};
     /** Sum of |bin|^2 (scaled) over all channels and in-band bins — used for relative share. */
     const bandIntegrated = {};
-    /** Mean bin power (integrated / bin count) — for log absolute display. */
+    /** Mean bin power (integrated / bin count) — legacy / debug. */
     const bandMean = {};
 
     Object.keys(bands).forEach((bandName) => {
       const range = bands[bandName].range;
+      bandIntegratedByCh[bandName] = [0, 0, 0, 0];
       let integrated = 0;
       let bins = 0;
 
@@ -677,6 +687,8 @@ function calculateBandPowersFromEEG() {
         const lo = Math.max(1, Math.ceil((range[0] * n) / sampleRate));
         const hi = Math.min(Math.floor((range[1] * n) / sampleRate), n / 2);
 
+        let chIntegrated = 0;
+        let chBins = 0;
         for (let k = lo; k <= hi; k++) {
           let re = 0;
           let im = 0;
@@ -687,9 +699,13 @@ function calculateBandPowersFromEEG() {
             re += sample * Math.cos(phase);
             im -= sample * Math.sin(phase);
           }
-          integrated += (re * re + im * im) / n;
+          const pwr = (re * re + im * im) / n;
+          chIntegrated += pwr;
+          chBins++;
+          integrated += pwr;
           bins++;
         }
+        bandIntegratedByCh[bandName][ch] = chBins > 0 ? chIntegrated / chBins : 0;
       }
 
       bandIntegrated[bandName] = integrated;
@@ -709,14 +725,27 @@ function calculateBandPowersFromEEG() {
           : 0.2;
     });
 
+    // Muse/Mind Monitor absolute = log10 power (Bels), not 10·log10 dB.
     const absolutePowers = {};
     Object.keys(bands).forEach((bandName) => {
-      absolutePowers[bandName] = 10 * Math.log10(Math.max(bandMean[bandName], 1e-12));
+      absolutePowers[bandName] = Math.log10(
+        Math.max(bandMean[bandName], 1e-12),
+      );
     });
+
+    const perChannelAbsoluteOsc = {};
+    Object.keys(bands).forEach((bandName) => {
+      perChannelAbsoluteOsc[bandName] = bandIntegratedByCh[bandName].map(
+        (chPow) => Math.log10(Math.max(chPow, 1e-12)),
+      );
+    });
+
+    latestPerChannelAbsoluteOsc = perChannelAbsoluteOsc;
 
     return {
       absolute: absolutePowers,
       relative: relativePowers,
+      perChannelAbsoluteOsc,
     };
   } catch (err) {
     console.error(`❌ Band power calculation error: ${err.message}`);
@@ -1381,6 +1410,33 @@ function launchSwiftBridge() {
 // EEG Processing
 // ============================================================================
 
+/** Simulator start auto-enables OSC; live Muse/Ganglion did not — Csound saw 0.0 while WS packets flowed. */
+let oscAutoEnabledForLive = false;
+
+function maybeAutoEnableOscForLiveDevice(reason) {
+  if (settings.simulatorMode || oscAutoEnabledForLive) return;
+  oscAutoEnabledForLive = true;
+  if (!settings.oscSending) {
+    settings.oscSending = true;
+    console.log(`📡 OSC Sending: AUTO-ENABLED (${reason})`);
+    broadcastSettings();
+  }
+}
+
+/** Flatten bridge EEG to four finite floats (LibMuse sends [TP9, AF7, AF8, TP10]). */
+function coerceEegVector4(raw) {
+  if (!Array.isArray(raw) || raw.length < 4) return null;
+  const flat = raw.slice(0, 4).map((v) => {
+    if (Array.isArray(v)) {
+      const last = v[v.length - 1];
+      return Number(last);
+    }
+    return Number(v);
+  });
+  if (flat.length !== 4 || flat.some((v) => !Number.isFinite(v))) return null;
+  return flat;
+}
+
 function broadcastEEGData(eeg, processed, packet = {}) {
   // Buffer for visualization / legacy Welch fallback
   eeg.forEach((value, ch) => {
@@ -1474,14 +1530,16 @@ function handleEEGPacket(packet) {
     return;
   }
 
-  let eeg = packet.eeg;
+  maybeAutoEnableOscForLiveDevice("hardware EEG stream");
+
+  let eeg = coerceEegVector4(packet.eeg);
 
   verboseLog(
     `📥 handleEEGPacket called: REAL MODE, hasEEG=${!!eeg}, packetCount=${packetCount}`,
   );
 
   if (!eeg) {
-    console.log("⚠️  No EEG data in packet:", packet);
+    console.log("⚠️  Invalid or missing EEG in packet:", packet);
     return;
   }
 
@@ -1576,6 +1634,8 @@ function handleBandPowersPacket(packet) {
     return;
   }
 
+  maybeAutoEnableOscForLiveDevice("Muse band powers");
+
   // Store band powers (10 Hz rate from Muse)
   if (!packet.absolute || !packet.relative) {
     console.log("⚠️  bandPowers packet missing data:", packet);
@@ -1586,6 +1646,9 @@ function handleBandPowersPacket(packet) {
     `📊 Muse bandPowers received: α=${packet.relative.alpha?.toFixed(3)}`,
   );
   packetCount++;
+
+  // Muse SDK sends one scalar per band; use 4× same Mind Monitor absolute on /elements/*.
+  latestPerChannelAbsoluteOsc = null;
 
   // Store current band powers
   currentBandPowers.absolute = packet.absolute;
@@ -1964,8 +2027,23 @@ function sendOSCtoCSsound(eeg) {
   }
 }
 
+/** Per-band four-channel Mind Monitor absolute (TP9, AF7, AF8, TP10) for `/elements/*_absolute`. */
+let latestPerChannelAbsoluteOsc = null;
+
 let oscBandPowerCount = 0;
-function sendBandPowersOSC(absolute, relative) {
+/**
+ * Emit band powers on two parallel address families (same UDP port):
+ *
+ *   Mind Monitor / external Csound — `/prefix/elements/{band}_absolute|_relative` with 4 floats ("ffff")
+ *   Internal NeuroVis examples     — `/prefix/bands/relative/{band}` and `/bands/absolute/{band}` with 1 float ("f")
+ *
+ * Browser V12/Teaching engines use chnget (not OSC) and are fed separately from the WebSocket store.
+ */
+function sendBandPowersOSC(
+  absolute,
+  relative,
+  perChannelAbsolute = latestPerChannelAbsoluteOsc,
+) {
   if (!oscPort) return;
 
   // CRITICAL: Check if user enabled OSC sending
@@ -1975,7 +2053,7 @@ function sendBandPowersOSC(absolute, relative) {
     const bands = ["delta", "theta", "alpha", "beta", "gamma"];
     oscBandPowerCount++;
 
-    // Send absolute band powers (log scale)
+    // --- Absolute bands ---
     if (settings.oscStreams.bandAbsolute) {
       oscPort.send({
         address: `${settings.oscPrefix}/bands/absolute`,
@@ -1985,23 +2063,31 @@ function sendBandPowersOSC(absolute, relative) {
         })),
       });
 
-      // Per-band addresses
       bands.forEach((band) => {
-        // Format 1: /muse/bands/absolute/alpha
+        const perCh = perChannelAbsolute?.[band];
+        // Internal / legacy: single float (e.g. examples that use one k-rate var)
         oscPort.send({
           address: `${settings.oscPrefix}/bands/absolute/${band}`,
           args: [{ type: "f", value: absolute[band] || 0 }],
         });
 
-        // Format 2: /muse/elements/{band}_absolute (alternative format)
+        // Mind Monitor / external: four floats per electrode
         oscPort.send({
           address: `${settings.oscPrefix}/elements/${band}_absolute`,
-          args: [{ type: "f", value: absolute[band] || 0 }],
+          args: oscFloatArgs(
+            elementsBandAbsoluteArgsFromChannels(
+              band,
+              relative,
+              perCh,
+              null,
+              absolute,
+            ),
+          ),
         });
       });
     }
 
-    // Send relative band powers (0-1 normalized) ← Csound uses this
+    // --- Relative bands ---
     if (settings.oscStreams.bandRelative) {
       oscPort.send({
         address: `${settings.oscPrefix}/bands/relative`,
@@ -2011,18 +2097,19 @@ function sendBandPowersOSC(absolute, relative) {
         })),
       });
 
-      // Per-band addresses (CSOUND PRIMARY, also works with Max/MSP, TouchDesigner, Unity)
       bands.forEach((band) => {
-        // Format 1: /muse/bands/relative/alpha
+        // Internal examples: `/muse/bands/relative/alpha` with "f" (single float 0–1)
         oscPort.send({
           address: `${settings.oscPrefix}/bands/relative/${band}`,
           args: [{ type: "f", value: relative[band] || 0 }],
         });
 
-        // Format 2: /muse/elements/{band}_relative (alternative format)
+        // Mind Monitor: four floats split across TP9/AF7/AF8/TP10
         oscPort.send({
           address: `${settings.oscPrefix}/elements/${band}_relative`,
-          args: [{ type: "f", value: relative[band] || 0 }],
+          args: oscFloatArgs(
+            elementsBandRelativeArgs(band, relative, null),
+          ),
         });
       });
 
@@ -2318,6 +2405,7 @@ function handleWebSocketMessage(msg, ws) {
               deviceIndex: deviceIndex,
             }) + "\n",
           );
+          maybeAutoEnableOscForLiveDevice("WebSocket select_device");
           console.log(`📡 Sent connect command to MuseBridge`);
         }
       } else {
@@ -2343,6 +2431,7 @@ function handleWebSocketMessage(msg, ws) {
             deviceIndex: msg.deviceIndex,
           }) + "\n",
         );
+        maybeAutoEnableOscForLiveDevice("WebSocket connect_device");
       } else {
         console.log(`   ❌ MuseBridge not available`);
       }
@@ -3284,6 +3373,14 @@ app.post("/api/settings", (req, res) => {
 app.post("/api/connect/:index", (req, res) => {
   const index = parseInt(req.params.index);
   if (swiftProcess && swiftProcess.stdin) {
+    const deviceToConnect = connectedDevices[index];
+    if (deviceToConnect) {
+      currentDevice = deviceToConnect;
+      settings.deviceModel = deviceToConnect.modelKey;
+      settings.yAxisRange = getDeviceYRange(settings.deviceModel);
+      dsp.updateConfig({ numChannels: deviceToConnect.specs?.eegChannels || 4 });
+    }
+    maybeAutoEnableOscForLiveDevice("REST /api/connect/:index");
     swiftProcess.stdin.write(
       JSON.stringify({
         command: "connect",

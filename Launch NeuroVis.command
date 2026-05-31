@@ -90,17 +90,24 @@ WEB_PID=$!
 printf "${DIM}   pid=%s · log=%s${RESET}\n" "$WEB_PID" "$WEB_LOG"
 
 # ---- 5. Wait for the frontend, then open the browser ----
-banner "Waiting for http://localhost:3001 to come up…"
-deadline=$(( $(date +%s) + 90 ))
+banner "Waiting for http://127.0.0.1:3001 to respond…"
+deadline=$(( $(date +%s) + 120 ))
 ready=0
+dots=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  if curl -sfo /dev/null --max-time 2 "http://localhost:3001"; then
-    ready=1; break
+  code=$(curl -4 -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:3001/" 2>/dev/null || echo "000")
+  if [ "$code" = "200" ] || [ "$code" = "304" ]; then
+    ready=1
+    break
   fi
   if ! kill -0 "$WEB_PID" 2>/dev/null; then
     err "Frontend process exited early. Last lines from web log:"
-    tail -n 25 "$WEB_LOG" || true
+    tail -n 30 "$WEB_LOG" || true
     exit 1
+  fi
+  dots=$((dots + 1))
+  if [ $((dots % 5)) -eq 0 ]; then
+    printf "${DIM}   …still waiting (last HTTP %s)${RESET}\n" "$code"
   fi
   sleep 1
 done
@@ -109,7 +116,8 @@ if [ "$ready" -eq 1 ]; then
   ok "NeuroVis is up. Opening $WEB_URL"
   open "$WEB_URL" 2>/dev/null || warn "Could not auto-open browser. Visit $WEB_URL manually."
 else
-  err "Frontend did not respond within 90s. Check $WEB_LOG"
+  err "Frontend did not return HTTP 200 within 120s (last log lines):"
+  tail -n 40 "$WEB_LOG" || true
   exit 1
 fi
 

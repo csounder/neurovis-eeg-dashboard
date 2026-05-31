@@ -47,9 +47,12 @@ export default function OSCPage() {
 
   const receiverSnippets = React.useMemo(
     () => ({
-      csound: `giOSC OSCinit ${port}
-ka[] init 5
-kF   OSClisten giOSC, "${prefix}/bands/alpha_absolute", "ffff", ka[0], ka[1], ka[2], ka[3]`,
+      csoundMindMonitor: `giOSC OSCinit ${port}
+; External / Mind Monitor — four floats per electrode
+kA0 OSClisten giOSC, "${prefix}/elements/alpha_absolute", "ffff", gkTP9, gkAF7, gkAF8, gkTP10`,
+      csoundInternal: `giOSC OSCinit ${port}
+; Internal NeuroVis examples — single float per band (0–1 relative)
+kAlpha OSClisten giOSC, "${prefix}/bands/relative/alpha", "f", gkAlpha`,
       max: `[udpreceive ${port}]
     |
 [route ${prefix}]
@@ -297,11 +300,20 @@ kF   OSClisten giOSC, "${prefix}/bands/alpha_absolute", "ffff", ka[0], ka[1], ka
           </CardHeader>
           <CardBody className="space-y-4 text-xs">
             <CopyableConsole
-              title="Csound (OSCinit / OSClisten)"
-              text={receiverSnippets.csound}
+              title="Csound — Mind Monitor / external (4 floats)"
+              text={receiverSnippets.csoundMindMonitor}
               emptyPlaceholder=""
-              downloadBasename="neurovis-osc-csound-receiver"
-              ariaLabel="Csound OSC receiver snippet"
+              downloadBasename="neurovis-osc-csound-mindmonitor"
+              ariaLabel="Csound Mind Monitor OSC receiver snippet"
+              textareaClassName="min-h-[4.5rem] h-auto"
+              className="bg-zinc-950/80"
+            />
+            <CopyableConsole
+              title="Csound — internal examples (single float)"
+              text={receiverSnippets.csoundInternal}
+              emptyPlaceholder=""
+              downloadBasename="neurovis-osc-csound-internal"
+              ariaLabel="Csound internal OSC receiver snippet"
               textareaClassName="min-h-[4.5rem] h-auto"
               className="bg-zinc-950/80"
             />
@@ -315,8 +327,12 @@ kF   OSClisten giOSC, "${prefix}/bands/alpha_absolute", "ffff", ka[0], ka[1], ka
               className="bg-zinc-950/80"
             />
             <p className="text-zinc-500">
-              Full address reference is in{" "}
-              <code>README-CSOUND-INTEGRATION.md</code>.
+              NeuroVis emits <strong className="font-normal text-zinc-400">both</strong>{" "}
+              address families on port {port}: Mind Monitor{" "}
+              <code className="text-zinc-400">/elements/…_absolute</code> (ffff) for
+              external instruments, and{" "}
+              <code className="text-zinc-400">/bands/relative/…</code> (f) for bundled
+              examples. V12/Teaching browser engines use chnget, not UDP OSC.
             </p>
           </CardBody>
         </Card>

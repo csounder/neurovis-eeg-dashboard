@@ -34,6 +34,7 @@ export function DeviceSelector() {
     setConnecting(name);
     try {
       await api.connectIndex(index);
+      await api.setDspConfig({ oscSending: true }).catch(() => {});
       useNeuroStore.getState().setActiveDevice(name);
     } finally {
       setConnecting(null);
