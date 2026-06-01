@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import {
   ScaleControl,
@@ -109,22 +109,16 @@ function KindPicker({
   value: DisplayKind;
   onChange: (next: DisplayKind) => void;
 }) {
-  const spec = DISPLAY_REGISTRY[value];
   return (
-    <div className="relative min-w-0">
-      <div className="flex min-w-0 flex-col">
-        <div className="truncate text-sm font-medium text-zinc-100">
-          {spec.label}
-        </div>
-        <div className="truncate text-[11px] text-zinc-500">
-          {spec.description}
-        </div>
-      </div>
+    <div className="min-w-0 flex-1">
+      <label className="sr-only" htmlFor="display-kind-picker">
+        Visualization type
+      </label>
       <select
+        id="display-kind-picker"
         value={value}
         onChange={(e) => onChange(e.target.value as DisplayKind)}
-        className="absolute inset-0 cursor-pointer appearance-none opacity-0"
-        aria-label="Change visualization"
+        className="nv-select pr-8"
       >
         {DISPLAY_ORDER.map((k) => (
           <option key={k} value={k}>
@@ -132,7 +126,6 @@ function KindPicker({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute -right-4 top-1 h-3.5 w-3.5 text-zinc-500" />
     </div>
   );
 }

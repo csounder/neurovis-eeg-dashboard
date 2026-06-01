@@ -1,20 +1,26 @@
 import type { V12RenderControls } from "@/components/csound/CsoundV12Renderer";
 import {
-  CONCERT_SCENES,
-  CONCERT_SHIFT_SCENES,
+  ALL_CONCERT_SCENES,
   type ConcertScene,
 } from "@/components/concert/ConcertVisualizer";
 import { coerceBandEdgePreset } from "@/lib/bandEdgePreset";
+import {
+  mergeConcertVisualTuning,
+  type ConcertVisualTuning,
+} from "@/lib/concertVisualTuning";
+import {
+  DEFAULT_CONCERT_SCENE_ROTATION,
+  normalizeSceneRotation,
+  type ConcertSceneRotationSettings,
+} from "@/lib/concert/concertSceneRotation";
+import type { ConcertAudioReactiveMode } from "@/lib/concertAudioBlend";
 import type { BandEdgePreset, BandName } from "@/lib/types";
 
 export const PERFORMANCE_PRESET_FORMAT = "neurovis-performance-preset" as const;
 export const PERFORMANCE_PRESET_VERSION = 1 as const;
 
 const BANDS: BandName[] = ["delta", "theta", "alpha", "beta", "gamma"];
-const SCENE_IDS = new Set<string>([
-  ...CONCERT_SCENES.map((s) => s.id),
-  ...CONCERT_SHIFT_SCENES.map((s) => s.id),
-]);
+const SCENE_IDS = new Set<string>(ALL_CONCERT_SCENES.map((s) => s.id));
 
 export type PerformancePresetConcertSlice = {
   scene: ConcertScene;
@@ -22,6 +28,12 @@ export type PerformancePresetConcertSlice = {
   trails: number;
   showHud: boolean;
   showControls: boolean;
+  tuning: ConcertVisualTuning;
+  arMode: ConcertAudioReactiveMode;
+  tuningMode: boolean;
+  tuningHud: boolean;
+  mirrorCsoundHud: boolean;
+  sceneRotation?: ConcertSceneRotationSettings;
 };
 
 export type NeuroVisPerformancePresetV1 = {
@@ -81,12 +93,66 @@ function parseConcertSlice(obj: unknown): PerformancePresetConcertSlice | null {
   const o = obj as Record<string, unknown>;
   const scene = o.scene;
   if (typeof scene !== "string" || !SCENE_IDS.has(scene)) return null;
+  const tuning = parseTuning(o.tuning) ?? mergeConcertVisualTuning(null);
+  const arModeRaw = o.arMode;
+  const arModes = ["eeg", "mic", "wasm", "blend"] as const;
+  const arMode =
+    typeof arModeRaw === "string" && (arModes as readonly string[]).includes(arModeRaw)
+      ? (arModeRaw as ConcertAudioReactiveMode)
+      : "blend";
   return {
     scene: scene as ConcertScene,
     intensity: clamp(numOr(o.intensity, 1), 0.25, 2.25),
     trails: clamp(numOr(o.trails, 0.9), 0.68, 0.97),
-    showHud: Boolean(o.showHud),
+    showHud: o.showHud !== false,
     showControls: o.showControls !== false,
+    tuning,
+    arMode,
+    tuningMode: Boolean(o.tuningMode),
+    tuningHud: Boolean(o.tuningHud),
+    mirrorCsoundHud: o.mirrorCsoundHud !== false,
+    sceneRotation:
+      o.sceneRotation === undefined
+        ? undefined
+        : normalizeSceneRotation(o.sceneRotation),
+  };
+}
+
+function parseTuning(raw: unknown): ConcertVisualTuning | null {
+  if (!raw || typeof raw !== "object") return null;
+  const t = raw as Record<string, unknown>;
+  return mergeConcertVisualTuning({
+    eegSensitivity: numOr(t.eegSensitivity, 1),
+    visualScale: numOr(t.visualScale, 1),
+    brightness: numOr(t.brightness, 1),
+    eegInfluence: numOr(t.eegInfluence, 1),
+    arAudioMix: numOr(t.arAudioMix, 0.5),
+    glBrightness: numOr(t.glBrightness, 1),
+    glMotion: numOr(t.glMotion, 1),
+    glParticleGlow: numOr(t.glParticleGlow, 1),
+    motionActivity: numOr(t.motionActivity, 1),
+  });
+}
+
+/** Build a complete concert slice for preset save (v1 partial presets merge with defaults). */
+export function captureConcertPresetSlice(input: {
+  scene: ConcertScene;
+  intensity: number;
+  trails: number;
+  showHud: boolean;
+  showControls: boolean;
+  tuning: ConcertVisualTuning;
+  arMode: ConcertAudioReactiveMode;
+  tuningMode: boolean;
+  tuningHud: boolean;
+  mirrorCsoundHud: boolean;
+  sceneRotation?: ConcertSceneRotationSettings;
+}): PerformancePresetConcertSlice {
+  return {
+    ...input,
+    sceneRotation: input.sceneRotation
+      ? normalizeSceneRotation(input.sceneRotation)
+      : undefined,
   };
 }
 

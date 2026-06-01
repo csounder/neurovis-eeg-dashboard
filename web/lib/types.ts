@@ -133,6 +133,24 @@ export interface InstrumentStatusMessage {
   [k: string]: unknown;
 }
 
+export interface CsoundConsoleLine {
+  id: number;
+  t: number;
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
+export interface CsoundConsoleMessage {
+  type: "csound_console";
+  lines: CsoundConsoleLine[];
+}
+
+export interface CsoundConsoleSnapshotMessage {
+  type: "csound_console_snapshot";
+  lines: CsoundConsoleLine[];
+  running?: boolean;
+}
+
 export interface RecordingCompleteMessage {
   type: "recording_complete";
   path?: string;
@@ -175,6 +193,8 @@ export type ServerMessage =
   | SettingsMessage
   | CalibrationStatusMessage
   | InstrumentStatusMessage
+  | CsoundConsoleMessage
+  | CsoundConsoleSnapshotMessage
   | RecordingCompleteMessage
   | BluetoothMessage
   | HardwareDisconnectedMessage

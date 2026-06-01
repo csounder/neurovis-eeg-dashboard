@@ -13,6 +13,7 @@ const path = require("path");
 require("dotenv").config();
 
 const sessionDisk = require("./server-session-disk");
+const csoundPatches = require("./csound-patches");
 const {
   elementsBandAbsoluteArgs,
   elementsBandAbsoluteArgsFromChannels,
@@ -27,12 +28,18 @@ const {
   Downsampler,
 } = require("./dsp");
 
-// BrainFlow for OpenBCI Ganglion
-const brainflow = require("brainflow");
-const BoardShim = brainflow.BoardShim;
-const BoardIds = brainflow.BoardIds;
-const BrainFlowInputParams = brainflow.BrainFlowInputParams;
-const LogLevels = brainflow.LogLevels;
+// BrainFlow for OpenBCI Ganglion (optional — skipped by default install to avoid koffi native compile)
+let brainflowModule = null;
+function loadBrainflow() {
+  if (brainflowModule !== null) return brainflowModule;
+  try {
+    brainflowModule = require("brainflow");
+    return brainflowModule;
+  } catch (err) {
+    brainflowModule = false;
+    return false;
+  }
+}
 
 // ============================================================================
 // Configuration
@@ -456,13 +463,104 @@ let swiftProcess = null;
 /** When true, bridge process exit does not auto-respawn (used while swapping Swift ↔ Athena). */
 let suppressBridgeAutoRestart = false;
 let csoundProcess = null; // Track current Csound instrument
-let currentInstrument = null;
+let currentInstrument = null; // "library:id"
+let currentInstrumentMeta = null;
+const CSOUND_CONSOLE_MAX = 800;
+let csoundConsoleBuffer = [];
+let csoundConsoleSeq = 0;
+
+function clearCsoundConsoleBuffer() {
+  csoundConsoleBuffer = [];
+  /** Keep monotonic ids across launches so WS clients never see duplicate React keys. */
+}
+
+function nextCsoundConsoleId() {
+  csoundConsoleSeq += 1;
+  return Date.now() * 1000 + (csoundConsoleSeq % 1000);
+}
+
+function appendCsoundConsole(stream, chunk) {
+  const text = String(chunk || "");
+  if (!text) return;
+  const lines = text.split(/\r?\n/);
+  const stamped = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isLast = i === lines.length - 1;
+    if (!line && isLast && text.endsWith("\n")) continue;
+    if (!line && !isLast) {
+      stamped.push({
+        id: nextCsoundConsoleId(),
+        t: Date.now(),
+        stream,
+        text: "",
+      });
+      continue;
+    }
+    if (!line && isLast) continue;
+    stamped.push({
+      id: nextCsoundConsoleId(),
+      t: Date.now(),
+      stream,
+      text: line,
+    });
+  }
+  if (!stamped.length) return;
+  csoundConsoleBuffer = csoundConsoleBuffer.concat(stamped).slice(-CSOUND_CONSOLE_MAX);
+  broadcastCsoundConsole(stamped);
+}
+
+function broadcastCsoundConsole(lines) {
+  if (!lines?.length) return;
+  const payload = JSON.stringify({ type: "csound_console", lines });
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) client.send(payload);
+  });
+}
+
+function sendCsoundConsoleSnapshot(ws) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!csoundConsoleBuffer.length) return;
+  ws.send(
+    JSON.stringify({
+      type: "csound_console_snapshot",
+      lines: csoundConsoleBuffer,
+      running: !!(csoundProcess && !csoundProcess.killed),
+    }),
+  );
+}
+
+function writeCsoundStdin(text) {
+  if (!csoundProcess || csoundProcess.killed) {
+    return { ok: false, reason: "not_running" };
+  }
+  if (!csoundProcess.stdin?.writable) {
+    return { ok: false, reason: "stdin_closed" };
+  }
+  try {
+    csoundProcess.stdin.write(String(text));
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err.message };
+  }
+}
+
+function attachCsoundProcessIo(proc) {
+  const onData = (stream) => (data) => {
+    const s = data.toString();
+    console.log(stream === "stderr" ? `[CSOUND] ${s.trimEnd()}` : `[CSOUND out] ${s.trimEnd()}`);
+    appendCsoundConsole(stream, s);
+  };
+  proc.stdout?.on("data", onData("stdout"));
+  proc.stderr?.on("data", onData("stderr"));
+}
 let currentDevice = null; // Track selected device model
 
-// Ganglion BrainFlow session
-let ganglionBoard = null;
-let ganglionStreaming = false;
-let ganglionInterval = null;
+// OpenBCI BrainFlow session (Ganglion, Cyton, Ultra Cortex / Cyton+Daisy)
+let openBciBoard = null;
+let openBciStreaming = false;
+let openBciPollInterval = null;
+let openBciKind = null;
 
 let connectedDevices = [];
 let eegBuffer = [[], [], [], []];
@@ -653,6 +751,14 @@ function calculateBandPowersFromEEG() {
     if (!srcBuf || srcBuf.length < 4 || srcBuf[0].length < minSamples) {
       return null;
     }
+
+    if (!spectralReady && !calculateBandPowersFromEEG._warnedUnconditioned) {
+      calculateBandPowersFromEEG._warnedUnconditioned = true;
+      console.warn(
+        "⚠️  Band powers: using unconditioned EEG buffer — enable server bandpass (DSP page) or δ may look inflated from drift/noise.",
+      );
+    }
+    if (spectralReady) calculateBandPowersFromEEG._warnedUnconditioned = false;
 
     const ranges = welchBandRangesForPreset(settings.bandEdgePreset);
     const bands = {
@@ -2281,6 +2387,8 @@ wss.on("connection", (ws) => {
     }),
   );
 
+  sendCsoundConsoleSnapshot(ws);
+
   ws.on("message", (data) => {
     try {
       const msg = JSON.parse(data);
@@ -2349,6 +2457,14 @@ function handleOscRelay(msg) {
 
 function handleWebSocketMessage(msg, ws) {
   switch (msg.type) {
+    case "csound_stdin": {
+      const text = msg.text ?? msg.char ?? "";
+      const result = writeCsoundStdin(text);
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "csound_stdin_ack", ...result }));
+      }
+      break;
+    }
     case "osc_send":
       handleOscRelay(msg);
       break;
@@ -4003,34 +4119,131 @@ app.get("/api/dsp/config", (req, res) => {
 });
 
 // ============================================================================
-// Instrument Management API
+// Instrument / Csound patch management
 // ============================================================================
 
-// List available instruments
+function instrumentKey(library, id) {
+  return `${library}:${id}`;
+}
+
+function broadcastInstrumentStatus(extra = {}) {
+  const running = !!(csoundProcess && !csoundProcess.killed);
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(
+        JSON.stringify({
+          type: "instrument_status",
+          current: currentInstrument,
+          meta: currentInstrumentMeta,
+          running,
+          ...extra,
+        }),
+      );
+    }
+  });
+}
+
+function ensureOscForCsoundPatch(oscPort) {
+  const port = Number(oscPort) || config.oscPort;
+  if (port !== config.oscPort) {
+    console.warn(
+      `⚠️  Patch expects OSC port ${port}; NeuroVis sends on ${config.oscPort}. Align ports or edit the .csd OSCinit.`,
+    );
+  }
+  if (!settings.oscSending) {
+    settings.oscSending = true;
+    console.log("📡 OSC Sending: AUTO-ENABLED (Csound patch launch)");
+    broadcastSettings();
+  }
+}
+
+function stopCsoundPatchProcess() {
+  if (csoundProcess && !csoundProcess.killed) {
+    csoundProcess.kill();
+  }
+  csoundProcess = null;
+  currentInstrument = null;
+  currentInstrumentMeta = null;
+  appendCsoundConsole("stdout", "\n--- Csound patch stopped ---\n");
+}
+
+app.get("/api/csound/patches", (req, res) => {
+  try {
+    const libraries = csoundPatches.listAllPatches();
+    res.json({
+      libraries,
+      current: currentInstrument,
+      meta: currentInstrumentMeta,
+      running: csoundProcess && !csoundProcess.killed,
+      oscTarget: `${config.oscHost}:${config.oscPort}`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/csound/patches/launch", (req, res) => {
+  const library = req.body?.library || "nime";
+  const id = req.body?.id;
+  const mode = req.body?.mode || "headless";
+  if (!id) return res.status(400).json({ error: "Missing patch id" });
+  try {
+    const patch = csoundPatches.resolvePatch(library, id);
+    launchCsoundPatch(req, res, patch, mode);
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+app.post("/api/csound/patches/stop", (req, res) => {
+  stopCsoundPatchProcess();
+  broadcastInstrumentStatus({ running: false });
+  res.json({ status: "stopped" });
+});
+
+app.get("/api/csound/console", (req, res) => {
+  res.json({
+    lines: csoundConsoleBuffer,
+    running: !!(csoundProcess && !csoundProcess.killed),
+    current: currentInstrument,
+  });
+});
+
+app.post("/api/csound/stdin", (req, res) => {
+  const text = req.body?.text ?? req.body?.char ?? "";
+  const result = writeCsoundStdin(text);
+  if (!result.ok) return res.status(result.reason === "not_running" ? 409 : 500).json(result);
+  res.json(result);
+});
+
+app.get("/api/csound/patches/:library/:id", (req, res) => {
+  try {
+    const patch = csoundPatches.resolvePatch(req.params.library, req.params.id);
+    const csd = fs.readFileSync(patch.path, "utf8");
+    res.json({ patch, csd });
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+// List available instruments (legacy + NIME)
 app.get("/api/instruments", (req, res) => {
   try {
-    const examplesDir = path.join(__dirname, "examples");
-    const files = fs.readdirSync(examplesDir);
-
-    const instruments = files
-      .filter((f) => f.startsWith("eeg_synth_") && f.endsWith(".csd"))
-      .map((f) => {
-        const name = f.replace("eeg_synth_", "").replace(".csd", "");
-        return {
-          id: name,
-          filename: f,
-          path: path.join(examplesDir, f),
-          name: name
-            .split("_")
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(" "),
-        };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
-
+    const { nime, examples } = csoundPatches.listAllPatches();
+    const instruments = [
+      ...nime.map((p) => ({ ...p, legacyId: p.id })),
+      ...examples.map((p) => ({
+        ...p,
+        legacyId: p.id,
+        id: p.id,
+      })),
+    ];
     res.json({
       instruments,
+      nime,
+      examples,
       current: currentInstrument,
+      meta: currentInstrumentMeta,
       running: csoundProcess && !csoundProcess.killed,
     });
   } catch (err) {
@@ -4038,23 +4251,9 @@ app.get("/api/instruments", (req, res) => {
   }
 });
 
-// Launch an instrument
-app.post("/api/instruments/launch", (req, res) => {
-  const { id, mode } = req.body;
-
-  if (!id) {
-    return res.status(400).json({ error: "Missing instrument id" });
-  }
-
-  const launchMode = mode || "headless"; // Default to headless
-
-  const examplesDir = path.join(__dirname, "examples");
-  const csdPath = path.join(examplesDir, `eeg_synth_${id}.csd`);
-
-  // Verify file exists
-  if (!fs.existsSync(csdPath)) {
-    return res.status(404).json({ error: `Instrument not found: ${id}` });
-  }
+function launchCsoundPatch(req, res, patch, launchMode) {
+  const csdPath = patch.path;
+  const key = instrumentKey(patch.library, patch.id);
 
   try {
     if (launchMode === "csoundqt") {
@@ -4068,7 +4267,7 @@ app.post("/api/instruments/launch", (req, res) => {
       }
 
       // Launch in CsoundQt for editing
-      console.log(`📝 Opening in CsoundQt: ${id} at ${csdPath}`);
+      console.log(`📝 Opening in CsoundQt: ${key} at ${csdPath}`);
 
       // macOS: use 'open' command
       // Linux: use 'csoundqt' command
@@ -4116,117 +4315,98 @@ app.post("/api/instruments/launch", (req, res) => {
         });
       }
 
-      // Don't kill background instrument for CsoundQt mode
-      // User can run CsoundQt independently
-      currentInstrument = id;
+      currentInstrument = key;
+      currentInstrumentMeta = patch;
+      ensureOscForCsoundPatch(patch.oscPort);
 
-      // Broadcast status (not technically "running" in headless mode, but open for editing)
-      wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(
-            JSON.stringify({
-              type: "instrument_status",
-              current: currentInstrument,
-              running: false,
-              mode: "csoundqt_editing",
-            }),
-          );
-        }
-      });
+      broadcastInstrumentStatus({ running: false, mode: "csoundqt_editing" });
 
       res.json({
         success: true,
         current: currentInstrument,
+        meta: patch,
         running: false,
         mode: "csoundqt_editing",
         message:
           "CsoundQt opened for editing. Run from there or use Headless mode for background playback.",
       });
     } else {
-      // Headless mode: launch Csound in background
+      stopCsoundPatchProcess();
 
-      // Stop current instrument first
-      if (csoundProcess && !csoundProcess.killed) {
-        csoundProcess.kill();
-        csoundProcess = null;
-      }
-
-      console.log(`🎵 Launching instrument (headless): ${id}`);
-      csoundProcess = spawn("csound", ["-odac", "-d", csdPath]);
-      currentInstrument = id;
+      const csoundArgs = csoundPatches.buildCsoundLaunchArgs(csdPath, {
+        usesMidi: patch.usesMidi !== false,
+      });
+      console.log(`🎵 Launching Csound patch (headless): ${key}`);
+      console.log(`   csound ${csoundArgs.join(" ")}`);
+      ensureOscForCsoundPatch(patch.oscPort);
+      clearCsoundConsoleBuffer();
+      appendCsoundConsole(
+        "stdout",
+        `--- Launching ${key} ---\ncsound ${csoundArgs.join(" ")}\n`,
+      );
+      csoundProcess = spawn("csound", csoundArgs, {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      currentInstrument = key;
+      currentInstrumentMeta = patch;
+      attachCsoundProcessIo(csoundProcess);
 
       csoundProcess.on("close", (code) => {
-        console.log(`🎵 Instrument stopped: ${id} (exit code ${code})`);
-        if (currentInstrument === id) {
-          currentInstrument = null;
+        console.log(`🎵 Patch stopped: ${key} (exit code ${code})`);
+        appendCsoundConsole("stdout", `\n--- Exit code ${code} ---\n`);
+        if (currentInstrument === key) {
           csoundProcess = null;
+          currentInstrument = null;
+          currentInstrumentMeta = null;
         }
-
-        // Broadcast status to all clients
-        wss.clients.forEach((client) => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(
-              JSON.stringify({
-                type: "instrument_status",
-                current: currentInstrument,
-                running: false,
-              }),
-            );
-          }
-        });
+        broadcastInstrumentStatus({ running: false });
       });
 
-      csoundProcess.stderr.on("data", (data) => {
-        console.log(`[CSOUND] ${data.toString().trim()}`);
+      csoundProcess.on("error", (err) => {
+        appendCsoundConsole("stderr", `\nCsound spawn error: ${err.message}\n`);
+        broadcastInstrumentStatus({ running: false });
       });
 
-      // Broadcast status to all clients
-      wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(
-            JSON.stringify({
-              type: "instrument_status",
-              current: currentInstrument,
-              running: true,
-              mode: "headless",
-            }),
-          );
-        }
-      });
+      broadcastInstrumentStatus({ running: true, mode: "headless" });
 
       res.json({
         success: true,
         current: currentInstrument,
+        meta: patch,
         running: true,
         mode: "headless",
+        oscTarget: `${config.oscHost}:${config.oscPort}`,
+        usbMidi: patch.usesMidi !== false,
+        csoundArgs,
+        hint:
+          patch.usesMidi !== false
+            ? "USB MIDI enabled (portmidi). Type in the Concert Csound console (keys go to sensekey); Web MIDI in the browser does not reach this patch."
+            : "OSC-driven patch. sensekey: type in the Concert Csound console.",
       });
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+}
+
+app.post("/api/instruments/launch", (req, res) => {
+  const { id, mode, library } = req.body;
+  if (!id) return res.status(400).json({ error: "Missing instrument id" });
+  const lib = library || (String(id).includes(":") ? String(id).split(":")[0] : "examples");
+  const patchId =
+    String(id).includes(":") ? String(id).split(":").slice(1).join(":") : id;
+  try {
+    const patch = csoundPatches.resolvePatch(lib, patchId);
+    launchCsoundPatch(req, res, patch, mode || "headless");
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
 });
 
 // Stop current instrument
 app.post("/api/instruments/stop", (req, res) => {
-  if (csoundProcess && !csoundProcess.killed) {
-    csoundProcess.kill();
-    csoundProcess = null;
-    currentInstrument = null;
-
-    // Broadcast status
-    wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(
-          JSON.stringify({
-            type: "instrument_status",
-            current: null,
-            running: false,
-          }),
-        );
-      }
-    });
-  }
-
+  stopCsoundPatchProcess();
+  broadcastInstrumentStatus({ running: false });
   res.json({
     success: true,
     current: currentInstrument,
@@ -4238,61 +4418,142 @@ app.post("/api/instruments/stop", (req, res) => {
 app.get("/api/instruments/status", (req, res) => {
   res.json({
     current: currentInstrument,
+    meta: currentInstrumentMeta,
     running: csoundProcess && !csoundProcess.killed,
   });
 });
 
 // ============================================================================
-// Ganglion BrainFlow Integration
+// OpenBCI BrainFlow Integration (Ganglion · Cyton · Ultra Cortex)
 // ============================================================================
 
-async function startGanglion() {
-  if (ganglionBoard && ganglionStreaming) {
-    console.log("⚠️  Ganglion already streaming");
-    return;
+const OPENBCI_BRAINFLOW_PROFILES = {
+  ganglion: {
+    boardIdKey: "GANGLION_BOARD",
+    modelKey: "OpenBCI Ganglion",
+    displayName: "Ganglion",
+    serialEnv: "GANGLION_SERIAL_PORT",
+    defaultSerial: "/dev/cu.usbmodem11",
+    oscPrefix: "/ganglion",
+  },
+  cyton: {
+    boardIdKey: "CYTON_BOARD",
+    modelKey: "OpenBCI Cyton",
+    displayName: "Cyton",
+    serialEnv: "CYTON_SERIAL_PORT",
+    defaultSerial: "/dev/cu.usbserial-DN0Z5C2C",
+    oscPrefix: "/openbci",
+  },
+  ultracortex: {
+    boardIdKey: "CYTON_DAISY_BOARD",
+    modelKey: "OpenBCI Ultra Cortex",
+    displayName: "Ultra Cortex (Cyton+Daisy)",
+    serialEnv: "CYTON_DAISY_SERIAL_PORT",
+    defaultSerial: "/dev/cu.usbserial-DN0Z5C2C",
+    oscPrefix: "/openbci",
+  },
+};
+
+function resolveOpenBciKind(raw) {
+  const k = String(raw || "ganglion")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  if (k === "ganglion") return "ganglion";
+  if (k === "cyton" || k === "cyton8" || k === "openbcicyton") return "cyton";
+  if (
+    k === "ultracortex" ||
+    k === "cytondaisy" ||
+    k === "daisy" ||
+    k === "cyton+daisy"
+  ) {
+    return "ultracortex";
+  }
+  return null;
+}
+
+async function startOpenBciBrainflow(kind, options = {}) {
+  const resolved = resolveOpenBciKind(kind);
+  if (!resolved) {
+    throw new Error(
+      `Unknown OpenBCI board "${kind}". Use ganglion, cyton, or ultracortex.`,
+    );
+  }
+  if (openBciBoard && openBciStreaming) {
+    console.log(`⚠️  OpenBCI already streaming (${openBciKind})`);
+    return { kind: openBciKind };
   }
 
-  try {
-    console.log("🔌 Starting Ganglion via BrainFlow...");
+  const profile = OPENBCI_BRAINFLOW_PROFILES[resolved];
+  const brainflow = loadBrainflow();
+  if (!brainflow) {
+    throw new Error(
+      "brainflow is not installed. From the repo root run: npm run install:root",
+    );
+  }
+  const { BoardShim, BoardIds, BrainFlowInputParams, LogLevels } = brainflow;
+  const boardId = BoardIds[profile.boardIdKey];
+  if (boardId === undefined) {
+    throw new Error(`BrainFlow missing board id ${profile.boardIdKey}`);
+  }
 
-    // Enable BrainFlow logging
+  const serialPort =
+    options.serial_port ||
+    process.env[profile.serialEnv] ||
+    profile.defaultSerial;
+
+  try {
+    console.log(
+      `🔌 Starting ${profile.displayName} via BrainFlow (port ${serialPort})…`,
+    );
     BoardShim.setLogLevel(LogLevels.LEVEL_INFO);
 
-    const boardId = BoardIds.GANGLION_BOARD; // BLED dongle
     const params = new BrainFlowInputParams();
-    params.serial_port =
-      process.env.GANGLION_SERIAL_PORT || "/dev/cu.usbmodem11";
+    params.serial_port = serialPort;
 
-    ganglionBoard = new BoardShim(boardId, params);
+    openBciBoard = new BoardShim(boardId, params);
+    openBciKind = resolved;
 
-    console.log("⏳ Connecting to Ganglion...");
-    ganglionBoard.prepareSession();
-    console.log("✅ Ganglion connected!");
+    console.log(`⏳ Connecting to ${profile.displayName}…`);
+    openBciBoard.prepareSession();
+    console.log(`✅ ${profile.displayName} connected!`);
 
-    // Get board specs
     const eegChannels = BoardShim.getEegChannels(boardId);
     const samplingRate = BoardShim.getSamplingRate(boardId);
+    const numCh = eegChannels.length;
 
     console.log(
-      `📊 Ganglion: ${eegChannels.length} channels @ ${samplingRate} Hz`,
+      `📊 ${profile.displayName}: ${numCh} EEG @ ${samplingRate} Hz (UI may show first 4)`,
     );
 
-    // Start streaming
-    ganglionBoard.startStream();
-    ganglionStreaming = true;
-    console.log("▶️  Ganglion streaming started!\n");
+    openBciBoard.startStream();
+    openBciStreaming = true;
 
-    // Broadcast device info to UI
+    const spec = DEVICE_SPECS[profile.modelKey];
+    settings.deviceModel = profile.modelKey;
+    settings.oscPrefix = profile.oscPrefix;
+    settings.yAxisRange = getDeviceYRange(profile.modelKey);
+    dsp.updateConfig({ numChannels: numCh });
+    maybeAutoEnableOscForLiveDevice(`OpenBCI ${profile.displayName}`);
+
+    currentDevice = {
+      name: profile.displayName,
+      displayName: profile.displayName,
+      modelKey: profile.modelKey,
+      specs: spec,
+    };
+
     connectedDevices = [
       {
-        name: "Ganglion",
+        name: profile.displayName,
         index: 0,
-        model: "OpenBCI Ganglion",
+        model: profile.modelKey,
+        modelKey: profile.modelKey,
         connected: true,
         specs: {
-          name: "OpenBCI Ganglion",
-          eegChannels: 4,
-          eegSampleRate: 200,
+          name: profile.modelKey,
+          eegChannels: numCh,
+          eegSampleRate: samplingRate,
         },
       },
     ];
@@ -4308,101 +4569,90 @@ async function startGanglion() {
       }
     });
 
-    // Poll for data and compute band powers at 10 Hz
-    let sampleBuffer = [[], [], [], []]; // 4 channels
-    const samplesNeeded = Math.floor(samplingRate / 10); // ~20 samples per 10 Hz update
+    let sampleBuffer = Array.from({ length: numCh }, () => []);
+    const samplesNeeded = Math.max(8, Math.floor(samplingRate / 10));
 
-    ganglionInterval = setInterval(() => {
-      if (!ganglionStreaming) return;
+    openBciPollInterval = setInterval(() => {
+      if (!openBciStreaming) return;
 
-      const data = ganglionBoard.getBoardData();
+      const data = openBciBoard.getBoardData();
+      if (!data?.length || !data[0]?.length) return;
 
-      if (data && data.length > 0 && data[0].length > 0) {
-        const numSamples = data[0].length;
-
-        // Extract EEG channels (indices 1-4 for Ganglion)
-        for (let i = 0; i < numSamples; i++) {
-          for (let ch = 0; ch < 4; ch++) {
-            sampleBuffer[ch].push(data[eegChannels[ch]][i]);
-
-            // Keep buffer at ~128 samples for FFT
-            if (sampleBuffer[ch].length > 128) {
-              sampleBuffer[ch].shift();
-            }
-          }
-        }
-
-        // Compute band powers when we have enough data
-        if (sampleBuffer[0].length >= samplesNeeded) {
-          const bandPowers = computeBandPowersFromEEG(
-            sampleBuffer,
-            samplingRate,
-          );
-
-          if (bandPowers) {
-            currentBandPowers = bandPowers;
-            packetCount += numSamples;
-
-            // Broadcast to UI
-            wss.clients.forEach((client) => {
-              if (client.readyState === WebSocket.OPEN) {
-                client.send(
-                  JSON.stringify({
-                    type: "band_powers",
-                    absolute: bandPowers.absolute,
-                    relative: bandPowers.relative,
-                    timestamp: Date.now(),
-                  }),
-                );
-              }
-            });
-
-            // Send to Csound via OSC
-            if (settings.oscSending) {
-              sendBandPowersOSC(bandPowers);
-            }
-          }
+      const numSamples = data[0].length;
+      for (let i = 0; i < numSamples; i++) {
+        for (let ch = 0; ch < numCh; ch++) {
+          sampleBuffer[ch].push(data[eegChannels[ch]][i]);
+          if (sampleBuffer[ch].length > 128) sampleBuffer[ch].shift();
         }
       }
-    }, 100); // Poll every 100ms
+
+      if (sampleBuffer[0].length >= samplesNeeded) {
+        const bandPowers = computeBandPowersFromEEG(
+          sampleBuffer,
+          samplingRate,
+        );
+        if (bandPowers) {
+          currentBandPowers = bandPowers;
+          packetCount += numSamples;
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(
+                JSON.stringify({
+                  type: "band_powers",
+                  absolute: bandPowers.absolute,
+                  relative: bandPowers.relative,
+                  timestamp: Date.now(),
+                }),
+              );
+            }
+          });
+          if (settings.oscSending) sendBandPowersOSC(bandPowers);
+        }
+      }
+    }, 100);
+
+    return {
+      kind: resolved,
+      board: profile.boardIdKey,
+      channels: numCh,
+      sample_rate: samplingRate,
+      serial_port: serialPort,
+    };
   } catch (error) {
-    console.error("❌ Ganglion error:", error.message);
-    stopGanglion();
+    console.error(`❌ OpenBCI (${resolved}) error:`, error.message);
+    stopOpenBciBrainflow();
+    throw error;
   }
 }
 
-function stopGanglion() {
-  if (!ganglionBoard && !ganglionStreaming && !ganglionInterval) {
-    return;
+function stopOpenBciBrainflow() {
+  if (!openBciBoard && !openBciStreaming && !openBciPollInterval) return;
+
+  const label =
+    OPENBCI_BRAINFLOW_PROFILES[openBciKind]?.displayName || "OpenBCI";
+  console.log(`🛑 Stopping ${label} stream…`);
+
+  if (openBciPollInterval) {
+    clearInterval(openBciPollInterval);
+    openBciPollInterval = null;
   }
 
-  console.log("🛑 Stopping OpenBCI Ganglion stream...");
-
-  if (ganglionInterval) {
-    clearInterval(ganglionInterval);
-    ganglionInterval = null;
-  }
-
-  if (ganglionBoard) {
+  if (openBciBoard) {
     try {
-      if (ganglionStreaming) {
-        ganglionBoard.stopStream();
-      }
-      ganglionBoard.releaseSession();
+      if (openBciStreaming) openBciBoard.stopStream();
+      openBciBoard.releaseSession();
     } catch (e) {
-      console.error("⚠️  Ganglion cleanup error:", e.message);
+      console.error("⚠️  OpenBCI cleanup error:", e.message);
     }
-    ganglionBoard = null;
+    openBciBoard = null;
   }
 
-  ganglionStreaming = false;
-  console.log("✅ OpenBCI Ganglion stream stopped");
+  openBciStreaming = false;
+  openBciKind = null;
+  console.log("✅ OpenBCI stream stopped");
 }
 
 function computeBandPowersFromEEG(channelData, sampleRate) {
-  // Simple FFT-based band power computation
-  // Average across all 4 channels
-
   const bands = {
     delta: [1, 4],
     theta: [4, 8],
@@ -4412,24 +4662,22 @@ function computeBandPowersFromEEG(channelData, sampleRate) {
   };
 
   let absolute = { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 };
+  const nCh = channelData.length;
+  if (!nCh) return null;
 
-  // Simplified power calculation (sum of squares in each band)
-  for (let ch = 0; ch < 4; ch++) {
-    const samples = channelData[ch].slice(-128); // Last 128 samples
+  for (let ch = 0; ch < nCh; ch++) {
+    const samples = channelData[ch].slice(-128);
     if (samples.length < 128) continue;
 
-    // Compute simple power (RMS) in each band
-    // This is a simplified version - proper FFT would be better
-    for (const [band, [low, high]] of Object.entries(bands)) {
+    for (const [band] of Object.entries(bands)) {
       let power = 0;
       for (let i = 0; i < samples.length; i++) {
         power += samples[i] * samples[i];
       }
-      absolute[band] += Math.sqrt(power / samples.length) / 4; // Average across channels
+      absolute[band] += Math.sqrt(power / samples.length) / nCh;
     }
   }
 
-  // Normalize to 0-1 range (simplified)
   const total =
     absolute.delta +
     absolute.theta +
@@ -4440,7 +4688,7 @@ function computeBandPowersFromEEG(channelData, sampleRate) {
 
   if (total > 0) {
     for (const band of Object.keys(bands)) {
-      absolute[band] = Math.max(0, Math.min(1, absolute[band] / 1000)); // Scale µV to 0-1
+      absolute[band] = Math.max(0, Math.min(1, absolute[band] / 1000));
       relative[band] = absolute[band] / total;
     }
   }
@@ -4448,18 +4696,54 @@ function computeBandPowersFromEEG(channelData, sampleRate) {
   return { absolute, relative };
 }
 
-// API endpoint to start Ganglion
+async function startGanglion() {
+  return startOpenBciBrainflow("ganglion");
+}
+
+function stopGanglion() {
+  stopOpenBciBrainflow();
+}
+
+app.post("/api/openbci/start", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await startOpenBciBrainflow(body.board || body.kind, {
+      serial_port: body.serial_port,
+    });
+    res.json({ status: "started", ...result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/openbci/stop", (req, res) => {
+  stopOpenBciBrainflow();
+  res.json({ status: "stopped" });
+});
+
+app.get("/api/openbci/boards", (req, res) => {
+  res.json({
+    boards: Object.entries(OPENBCI_BRAINFLOW_PROFILES).map(([id, p]) => ({
+      id,
+      model: p.modelKey,
+      serial_env: p.serialEnv,
+      default_serial: p.defaultSerial,
+    })),
+    brainflow_installed: !!loadBrainflow(),
+  });
+});
+
 app.post("/api/ganglion/start", async (req, res) => {
   try {
-    await startGanglion();
-    res.json({ status: "started" });
+    const result = await startGanglion();
+    res.json({ status: "started", ...result });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 app.post("/api/ganglion/stop", (req, res) => {
-  stopGanglion();
+  stopOpenBciBrainflow();
   res.json({ status: "stopped" });
 });
 
@@ -4484,7 +4768,13 @@ function start() {
     console.log(`✓ OSC Target: ${config.oscHost}:${config.oscPort}`);
     console.log(`✓ DSP Pipeline: ACTIVE`);
     console.log(`✓ Simulator Mode: ${settings.simulatorMode ? "ON" : "OFF"}`);
-    console.log("\nWaiting for Muse devices or simulator mode...\n");
+    console.log(
+      `✓ OpenBCI BrainFlow: ${loadBrainflow() ? "ready" : "missing — npm run install:root"}`,
+    );
+    console.log(
+      "  OpenBCI start: POST /api/openbci/start  body { board: ganglion|cyton|ultracortex, serial_port? }",
+    );
+    console.log("\nWaiting for Muse devices, OpenBCI stream, or simulator mode...\n");
   });
 }
 
@@ -4494,7 +4784,7 @@ process.on("SIGINT", () => {
   if (swiftProcess) swiftProcess.kill();
   if (csoundProcess) csoundProcess.kill();
   if (oscPort) oscPort.close();
-  stopGanglion();
+  stopOpenBciBrainflow();
   wss.close();
   process.exit(0);
 });

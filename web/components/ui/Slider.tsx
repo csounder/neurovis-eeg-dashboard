@@ -13,6 +13,7 @@ export function Slider({
   unit,
   format,
   className,
+  disabled,
 }: {
   value: number;
   min?: number;
@@ -23,6 +24,7 @@ export function Slider({
   unit?: string;
   format?: (v: number) => string;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <div className={cn("space-y-1.5", className)}>
@@ -41,8 +43,12 @@ export function Slider({
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="neurovis-slider h-1.5 w-full cursor-pointer appearance-none rounded-full bg-zinc-800 accent-emerald-500"
+        className={cn(
+          "neurovis-slider h-1.5 w-full appearance-none rounded-full bg-zinc-800 accent-emerald-500",
+          disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+        )}
       />
       <style jsx>{`
         .neurovis-slider::-webkit-slider-thumb {

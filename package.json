@@ -4,6 +4,9 @@
   "description": "NeuroVis EEG — Unified Brain Activity Dashboard (Muse + OpenBCI)",
   "author": "Richard Boulanger",
   "license": "MIT",
+  "engines": {
+    "node": ">=20 <25"
+  },
   "main": "main.js",
   "type": "commonjs",
   "scripts": {
@@ -13,6 +16,9 @@
     "deploy:musebridge": "bash scripts/deploy-musebridge.sh",
     "deploy:musebridge:debug": "bash scripts/deploy-musebridge.sh Debug",
     "stop": "bash scripts/neurovis-stop.sh",
+    "clean:node": "bash scripts/clean-node-modules.sh",
+    "install:core": "bash scripts/install-root-deps.sh --core",
+    "install:root": "bash scripts/install-root-deps.sh",
     "electron": "electron .",
     "build-mac": "electron-builder --mac",
     "build-win": "electron-builder --win",
@@ -44,11 +50,13 @@
     ]
   },
   "dependencies": {
-    "brainflow": "^5.13.1",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
     "osc": "^2.4.5",
     "ws": "^8.13.0"
+  },
+  "optionalDependencies": {
+    "brainflow": "^5.13.1"
   },
   "devDependencies": {
     "browser-sync": "^3.0.4",

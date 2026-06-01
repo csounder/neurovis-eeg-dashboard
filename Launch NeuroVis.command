@@ -62,16 +62,57 @@ banner "Releasing ports 3000 / 8080 / 3001 if anything is bound…"
 bash "$ROOT_DIR/scripts/neurovis-stop.sh" >/dev/null 2>&1 || true
 
 # ---- 2. Install deps if missing ----
-if [ ! -d "$ROOT_DIR/node_modules" ]; then
-  banner "Installing root dependencies (one-time)…"
-  npm install --silent || { err "Root npm install failed."; read -n 1 -s -r -p "Press any key to close…"; exit 1; }
+mkdir -p "$ROOT_DIR/.launcher-logs"
+ROOT_INSTALL_LOG="$ROOT_DIR/.launcher-logs/npm-root-install.log"
+WEB_INSTALL_LOG="$ROOT_DIR/.launcher-logs/npm-web-install.log"
+
+# Prefer Homebrew Node 22 when installed (avoids koffi failures on Node 25).
+if [ -f "$ROOT_DIR/scripts/use-node-22.sh" ]; then
+  # shellcheck source=/dev/null
+  source "$ROOT_DIR/scripts/use-node-22.sh" 2>/dev/null || true
 fi
-if [ ! -d "$ROOT_DIR/web/node_modules" ]; then
-  banner "Installing web/ dependencies (one-time)…"
-  (cd "$ROOT_DIR/web" && npm install --silent) || { err "web/ npm install failed."; read -n 1 -s -r -p "Press any key to close…"; exit 1; }
+NODE_MAJOR="$(node -p "Number(process.versions.node.split('.')[0])")"
+
+root_deps_ok() {
+  [ -f "$ROOT_DIR/node_modules/express/package.json" ] && \
+  [ -f "$ROOT_DIR/node_modules/ws/package.json" ] && \
+  { [ "$NODE_MAJOR" -ge 25 ] || [ -f "$ROOT_DIR/node_modules/brainflow/package.json" ]; }
+}
+
+if ! root_deps_ok; then
+  banner "Installing root dependencies (one-time)…"
+  if [ "$NODE_MAJOR" -ge 25 ]; then
+    warn "Node $(node -v): OpenBCI brainflow needs Node 22 — installing core deps only."
+    warn "For Ganglion/Cyton: brew install node@22, then npm run install:root"
+    INSTALL_ARGS="--core"
+  else
+    warn "brainflow/koffi compile may take 5–15 min — do not press Ctrl+C."
+    INSTALL_ARGS=""
+  fi
+  printf "${DIM}   log: %s${RESET}\n" "$ROOT_INSTALL_LOG"
+  if ! bash "$ROOT_DIR/scripts/install-root-deps.sh" $INSTALL_ARGS 2>&1 | tee "$ROOT_INSTALL_LOG"; then
+    err "Root npm install failed. Try: npm run clean:node && npm run install:root"
+    err "See $ROOT_INSTALL_LOG"
+    read -n 1 -s -r -p "Press any key to close…"; exit 1
+  fi
+  ok "Root dependencies installed"
 fi
 
-mkdir -p "$ROOT_DIR/.launcher-logs"
+if [ ! -f "$ROOT_DIR/web/node_modules/next/package.json" ]; then
+  if [ -d "$ROOT_DIR/web/node_modules" ]; then
+    warn "web/node_modules looks incomplete. Reinstalling…"
+    rm -rf "$ROOT_DIR/web/node_modules"
+  fi
+  banner "Installing web/ dependencies (one-time)…"
+  warn "Next.js install can take several minutes on a fresh machine."
+  printf "${DIM}   log: %s${RESET}\n" "$WEB_INSTALL_LOG"
+  if ! (cd "$ROOT_DIR/web" && npm install --no-fund --no-audit 2>&1 | tee "$WEB_INSTALL_LOG"); then
+    err "web/ npm install failed. See $WEB_INSTALL_LOG"
+    read -n 1 -s -r -p "Press any key to close…"; exit 1
+  fi
+  ok "web/ dependencies installed"
+fi
+
 BRIDGE_LOG="$ROOT_DIR/.launcher-logs/bridge.log"
 WEB_LOG="$ROOT_DIR/.launcher-logs/web.log"
 : > "$BRIDGE_LOG"
@@ -89,7 +130,30 @@ banner "Starting Next.js frontend (web/)…"
 WEB_PID=$!
 printf "${DIM}   pid=%s · log=%s${RESET}\n" "$WEB_PID" "$WEB_LOG"
 
-# ---- 5. Wait for the frontend, then open the browser ----
+# ---- 5. Wait for backend + frontend, then open the browser ----
+banner "Waiting for Node bridge http://127.0.0.1:3000 …"
+bridge_deadline=$(( $(date +%s) + 45 ))
+bridge_ready=0
+while [ "$(date +%s)" -lt "$bridge_deadline" ]; do
+  bcode=$(curl -4 -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:3000/api/status" 2>/dev/null || echo "000")
+  if [ "$bcode" = "200" ]; then
+    bridge_ready=1
+    break
+  fi
+  if ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
+    err "Bridge process exited early. Last lines from bridge log:"
+    tail -n 25 "$BRIDGE_LOG" || true
+    exit 1
+  fi
+  sleep 1
+done
+if [ "$bridge_ready" -ne 1 ]; then
+  err "Backend did not respond on port 3000. Last lines from bridge log:"
+  tail -n 25 "$BRIDGE_LOG" || true
+  exit 1
+fi
+ok "Node bridge is up (port 3000)"
+
 banner "Waiting for http://127.0.0.1:3001 to respond…"
 deadline=$(( $(date +%s) + 120 ))
 ready=0

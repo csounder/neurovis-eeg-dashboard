@@ -8,7 +8,7 @@
 
 | Layer | Status |
 |-------|--------|
-| **Live streaming in `server-enhanced.js`** | **Ganglion** has a dedicated BrainFlow starter (`POST /api/ganglion/start`). **Cyton / Daisy does not** use the same one-click starter in this file — plan on **OpenBCI GUI**, **BrainFlow scripts**, or your lab recorder for **gap-free 16-channel acquisition**. |
+| **Live streaming in `server-enhanced.js`** | BrainFlow starters: `POST /api/openbci/start` with `board` = `ganglion`, `cyton`, or `ultracortex` (Cyton+Daisy, 16ch). Set `serial_port` or env `CYTON_SERIAL_PORT` / `CYTON_DAISY_SERIAL_PORT`. Research UI still **4-channel–shaped** for tiles/export — document which hardware channels map to Ch1–4. |
 | **Dashboard / Research** | When the active device name matches **Cyton** / **Ultra Cortex** / **Daisy** heuristics, the UI picks **16ch (or 8ch Cyton)** profiles, **OpenBCI-style** traces, and shows a **Cyton acquisition callout** on the Research page. |
 | **OSC / Mind Monitor** | If you forward band or EEG data into NeuroVis via existing OSC/WebSocket paths, device naming can still tag the session as Ultra Cortex–class for documentation exports. |
 
@@ -28,10 +28,25 @@ Open **http://localhost:3001**.
 
 ---
 
+## Start Ultra Cortex streaming (BrainFlow)
+
+With dongle serial visible in `ls /dev/cu.usbserial*`:
+
+```bash
+export CYTON_DAISY_SERIAL_PORT=/dev/cu.usbserial-YOURPORT
+curl -X POST http://localhost:3000/api/openbci/start \
+  -H 'Content-Type: application/json' \
+  -d '{"board":"ultracortex"}'
+```
+
+8-channel Cyton only: use `"board":"cyton"` and `CYTON_SERIAL_PORT`.
+
+---
+
 ## Suggested lab workflow
 
-1. **Acquire** with **OpenBCI GUI** or a **BrainFlow** Python/Node script at **full rate**, saving **bdf/csv** as your ground truth.
-2. Run **NeuroVis** in parallel when you have a **live feed** into the stack you use (e.g. OSC from a forwarder, or development streams from your own bridge).
+1. **Acquire** with NeuroVis BrainFlow (above) and/or **OpenBCI GUI** for ground-truth **bdf/csv** when you need full 16ch exports outside the 4-column UI.
+2. Run **NeuroVis** with the live stream for band powers, OSC, markers, and Research QC.
 3. In the app, open **Research** for **session recorder**, **markers**, and **device-aware QC**. Read the blue **“Cyton / Daisy users — start here”** callout for export expectations.
 4. Use **OpenBCI-style time series**: sidebar → **OpenBCI-style TS** (`/openbci-time-series`) for a 4-lane-friendly view (first channels of the incoming stream; adjust expectations if your bridge only sends 4 columns).
 

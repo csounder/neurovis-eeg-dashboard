@@ -182,6 +182,8 @@ i 2 32 8 60
 </CsScore>
 
 </CsoundSynthesizer>
+
+
 <bsbPanel>
  <label>Widgets</label>
  <objectName/>

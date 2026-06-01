@@ -99,7 +99,7 @@ Common targets:
 | --- | --- |
 | Dashboard home | `/` |
 | Teaching mode | `/teaching` |
-| Concert mode | `/concert` |
+| Concert mode (53 visualizers, NIME Csound, WebGL) | `/concert` — see [docs/CONCERT-MODE.md](docs/CONCERT-MODE.md) |
 | Research mode (AI · Gemini lives here) | `/research` |
 | Settings | `/settings` |
 | Simulator | `/simulator` |
@@ -122,7 +122,45 @@ Then launch again.
 
 If `open` is blocked or your default browser is misconfigured, the launcher prints the URL — copy <http://localhost:3001> into your browser manually.
 
-### "Frontend did not respond within 90 seconds"
+### Stuck at "Installing root dependencies" or `koffi` / SIGINT
+
+The launcher installs **brainflow** (Ganglion + Cyton + Ultra Cortex). npm pauses on **`koffi`** while native code compiles — often **5–15 minutes** with little output. Do not press Ctrl+C; interrupting leaves a broken `node_modules` folder.
+
+**Clean reinstall:**
+
+```bash
+cd "/Users/richardboulanger/dB-Studio/NeuroVis"
+chmod -R u+w node_modules 2>/dev/null; rm -rf node_modules
+npm run install:root
+cd web && npm install
+```
+
+Use **Node 22 LTS** (`.nvmrc` is `22`). Node **25** cannot build `koffi`/brainflow.
+
+**You do not need nvm.** On macOS with Homebrew:
+
+```bash
+brew install node@22
+export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
+node -v   # must show v22.x
+cd "/Users/richardboulanger/dB-Studio/NeuroVis"
+npm run clean:node
+npm run install:root
+```
+
+If you stay on Node 25 for now: `npm run install:core` (Muse + NIME Csound; no OpenBCI hardware).
+
+**Start hardware after `npm start`:**
+
+| Board | curl |
+|-------|------|
+| Ganglion | `curl -X POST http://localhost:3000/api/openbci/start -H 'Content-Type: application/json' -d '{"board":"ganglion"}'` |
+| Cyton (8ch) | `… -d '{"board":"cyton","serial_port":"/dev/cu.usbserial-…"}'` |
+| Ultra Cortex (16ch) | `… -d '{"board":"ultracortex","serial_port":"/dev/cu.usbserial-…"}'` |
+
+Set serial ports via `GANGLION_SERIAL_PORT`, `CYTON_SERIAL_PORT`, or `CYTON_DAISY_SERIAL_PORT`, or pass `serial_port` in the JSON body. Legacy `POST /api/ganglion/start` still works for Ganglion.
+
+### "Frontend did not respond within 120 seconds"
 
 Usually a one-time slow build on a fresh checkout. Check `.launcher-logs/web.log` for the actual error. The most common causes:
 

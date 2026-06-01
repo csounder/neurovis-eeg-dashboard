@@ -2,11 +2,41 @@
 
 import * as React from "react";
 import { getConcertAudioLevel } from "@/lib/concertAudioMeter";
+import {
+  blendConcertAudioLevel,
+  type ConcertAudioReactiveMode,
+} from "@/lib/concertAudioBlend";
+import {
+  DEFAULT_CONCERT_VISUAL_TUNING,
+  type ConcertVisualTuning,
+} from "@/lib/concertVisualTuning";
+import {
+  CONCERT_BRAIN_ART_SCENES,
+  drawConcertBrainArtScene,
+  type ConcertBrainArtSceneId,
+} from "@/lib/concert/concertBrainScenes";
+import {
+  calmArtAudio,
+  calmArtMotion,
+  calmArtTime,
+  clamp,
+  CONCERT_ART_CALM,
+  dot,
+  rgba,
+  roundRect,
+  smoothBandVector,
+  smoothToward,
+} from "@/lib/concert/concertDrawKit";
+import { ConcertVisualizerWebGL } from "@/components/concert/ConcertVisualizerWebGL";
+import {
+  CONCERT_WEBGL_SCENES,
+  WEBGL_SCENE_IDS,
+  type ConcertWebglSceneId,
+} from "@/lib/concert/webgl/concertWebglScenes";
 import type { BandName, BandPowers } from "@/lib/types";
 
 export type ConcertScene =
   | "auroraBrain"
-  | "neuralCathedral"
   | "corticalBloom"
   | "spectralTunnel"
   | "synapticStorm"
@@ -17,14 +47,12 @@ export type ConcertScene =
   | "limbicNebula"
   | "pulseRingsAudio"
   | "bassBloomAudio"
-  | "stereoShearWave"
-  | "spectralCathedralAR"
-  | "scanlineWavefront"
-  | "sparkLatticeAR"
   | "harmonicOrbitsAR"
   | "resonantMeshAR"
   | "corticalLightningAR"
-  | "phaseLockLattice";
+  | "phaseLockLattice"
+  | ConcertBrainArtSceneId
+  | ConcertWebglSceneId;
 
 const BAND_COLORS: Record<BandName, [number, number, number]> = {
   delta: [80, 155, 255],
@@ -44,56 +72,51 @@ export const CONCERT_SCENES: {
   {
     id: "auroraBrain",
     title: "Aurora Brain",
-    subtitle: "A luminous head-space, alpha and gamma rippling across a cortical silhouette.",
-  },
-  {
-    id: "neuralCathedral",
-    title: "Neural Cathedral",
-    subtitle: "Grand architectural columns, beta sparks, and theta arches for large halls.",
+    subtitle: "EEG bands + audio drive · luminous cortical silhouette.",
   },
   {
     id: "corticalBloom",
     title: "Cortical Bloom",
-    subtitle: "Floral radial harmonics, breathing with delta and opening with alpha.",
+    subtitle: "EEG + audio · radial petals breathe with δ/α and room level.",
   },
   {
     id: "spectralTunnel",
     title: "Spectral Tunnel",
-    subtitle: "A cinematic flight through EEG bands, ideal behind rhythmic music.",
+    subtitle: "EEG + audio · flight through band-colored depth.",
   },
   {
     id: "synapticStorm",
     title: "Synaptic Storm",
-    subtitle: "Particle constellations and lightning paths driven by channel differences.",
+    subtitle: "EEG + audio · particles and links from channels + loudness.",
   },
   {
     id: "dreamOcean",
     title: "Dream Ocean",
-    subtitle: "Slow liquid waves, bioluminescent traces, and meditative stage motion.",
+    subtitle: "EEG + audio · slow waves and bioluminescent drift.",
   },
   {
     id: "rotatingBrain",
     title: "Rotating Brain",
-    subtitle: "A pseudo-3D human brain model with band-lit cortical regions and orbiting EEG traces.",
+    subtitle: "EEG + audio · 3D brain with orbiting band traces.",
   },
   {
     id: "connectomeGalaxy",
     title: "Connectome Galaxy",
-    subtitle: "A deep 3D neural starfield with long-range connections and gamma lightning.",
+    subtitle: "EEG + audio · starfield graph with gamma flashes on peaks.",
   },
   {
     id: "holographicCortex",
     title: "Holographic Cortex",
-    subtitle: "Shader-like scanlines, volumetric meshes, and floating cortical topography.",
+    subtitle: "EEG + audio · scanlines and mesh topography.",
   },
   {
     id: "limbicNebula",
     title: "Limbic Nebula",
-    subtitle: "Immersive plasma clouds, depth ribbons, and emotional color fields from the EEG bands.",
+    subtitle: "EEG + audio · plasma clouds from band color fields.",
   },
 ];
 
-/** EEG + browser Csound RMS (⌥1 … ⌥0). Simulator uses band-sync envelope when audio is silent. */
+/** Same EEG + audio drive as classic scenes; stronger transient coupling to RMS. */
 export const CONCERT_SHIFT_SCENES: {
   id: ConcertScene;
   title: string;
@@ -101,60 +124,65 @@ export const CONCERT_SHIFT_SCENES: {
 }[] = [
   {
     id: "pulseRingsAudio",
-    title: "Pulse Rings (AR)",
-    subtitle: "Concentric neural halos: band hues, ring breathe from RMS + γ/β.",
+    title: "Pulse Rings",
+    subtitle: "EEG + audio · concentric halos breathe with γ/β and level.",
   },
   {
     id: "bassBloomAudio",
-    title: "Bass Bloom (AR)",
-    subtitle: "Slow δ/θ core swells with audio bursts; meditative low-end focus.",
-  },
-  {
-    id: "stereoShearWave",
-    title: "Stereo Shear (AR)",
-    subtitle: "Left/right cortical waves: channel asymmetry × live level.",
-  },
-  {
-    id: "spectralCathedralAR",
-    title: "Spectral Cathedral (AR)",
-    subtitle: "Vertical pillars spike on transients; EEG tints the nave.",
-  },
-  {
-    id: "scanlineWavefront",
-    title: "Scanline Wavefront (AR)",
-    subtitle: "Raster storm: horizontal fronts velocity-modulated by audio.",
-  },
-  {
-    id: "sparkLatticeAR",
-    title: "Spark Lattice (AR)",
-    subtitle: "Grid ignites when RMS + band energy cross thresholds.",
+    title: "Bass Bloom",
+    subtitle: "EEG + audio · δ/θ core swells with low-end bursts.",
   },
   {
     id: "harmonicOrbitsAR",
-    title: "Harmonic Orbits (AR)",
-    subtitle: "Five band-colored orbits; angular motion kicks with the mix.",
+    title: "Harmonic Orbits",
+    subtitle: "EEG + audio · five band orbits, motion from the mix.",
   },
   {
     id: "resonantMeshAR",
-    title: "Resonant Mesh (AR)",
-    subtitle: "Chord graph in the round; edge glow follows loudness.",
+    title: "Resonant Mesh",
+    subtitle: "EEG + audio · round graph; edges glow with loudness.",
   },
   {
     id: "corticalLightningAR",
-    title: "Cortical Lightning (AR)",
-    subtitle: "γ-tinted spokes and branches flash on audio peaks.",
+    title: "Cortical Lightning",
+    subtitle: "EEG + audio · γ spokes flash on peaks.",
   },
   {
     id: "phaseLockLattice",
-    title: "Phase Lock Lattice (AR)",
-    subtitle: "Interference lattice: phase slips with RMS, colors from bands.",
+    title: "Phase Lock Lattice",
+    subtitle: "EEG + audio · interference lattice slips with drive.",
   },
 ];
+
+/** Neural art pack — particles, DNA, galaxies, synapses, activating brain. */
+export { CONCERT_BRAIN_ART_SCENES };
+
+/** WebGL pack — fullscreen shaders + TF particle lace. */
+export {
+  CONCERT_WEBGL_SCENES,
+  CONCERT_WEBGL_FULLSCREEN_SCENES,
+  CONCERT_WEBGL_TF_LACE_SCENES,
+  CONCERT_WEBGL_TF_MACRO_SCENES,
+  CONCERT_WEBGL_TF_SCENES,
+} from "@/lib/concert/webgl/concertWebglScenes";
+
+/** All scenes (classic + pulse + neural art + data art + WebGL). */
+export const ALL_CONCERT_SCENES = [
+  ...CONCERT_SCENES,
+  ...CONCERT_SHIFT_SCENES,
+  ...CONCERT_BRAIN_ART_SCENES,
+  ...CONCERT_WEBGL_SCENES,
+];
+
+const SCENE_LOOKUP = new Map(ALL_CONCERT_SCENES.map((s) => [s.id, s]));
+
+const BRAIN_ART_SCENE_IDS = new Set<string>(CONCERT_BRAIN_ART_SCENES.map((s) => s.id));
+const WEBGL_IDS = WEBGL_SCENE_IDS;
 
 export function concertSceneSpec(
   scene: ConcertScene,
 ): { id: ConcertScene; title: string; subtitle: string } | undefined {
-  return CONCERT_SCENES.find((s) => s.id === scene) ?? CONCERT_SHIFT_SCENES.find((s) => s.id === scene);
+  return SCENE_LOOKUP.get(scene);
 }
 
 type BandVector = Record<BandName, number>;
@@ -167,16 +195,54 @@ export function ConcertVisualizer({
   trails = 0.86,
   showHud = true,
   simAudioReactive = false,
+  eegReactive = false,
+  audioReactiveMode = "blend",
+  tuning = DEFAULT_CONCERT_VISUAL_TUNING,
+  compact = false,
+  rollingRaw = null,
+  estimatedEegHz = null,
 }: {
   scene: ConcertScene;
   latestBandsAbs: BandPowers | null;
   latestBandTraces: Record<BandName, number[]> | null;
+  /** Per-channel raw µV rings — drives WebGL FFT texture. */
+  rollingRaw?: number[][] | null;
+  /** EEG packet rate (Hz); defaults to 256 when unknown. */
+  estimatedEegHz?: number | null;
   intensity?: number;
   trails?: number;
   showHud?: boolean;
   /** True when server simulator or browser client sim is feeding EEG — enables AR preview without Csound. */
   simAudioReactive?: boolean;
+  /** True when a desktop Csound patch is playing — drives AR scenes from live bands (no browser RMS). */
+  eegReactive?: boolean;
+  /** How ⌥1–⌥0 scenes combine mic / WASM / EEG band energy. */
+  audioReactiveMode?: ConcertAudioReactiveMode;
+  /** Sensitivity, scale, brightness, EEG influence, AR audio mix. */
+  tuning?: ConcertVisualTuning;
+  /** Shorter preview for tuning mode. */
+  compact?: boolean;
 }) {
+  if (WEBGL_IDS.has(scene)) {
+    return (
+      <ConcertVisualizerWebGL
+        scene={scene as ConcertWebglSceneId}
+        latestBandsAbs={latestBandsAbs}
+        latestBandTraces={latestBandTraces}
+        intensity={intensity}
+        trails={trails}
+        showHud={showHud}
+        simAudioReactive={simAudioReactive}
+        eegReactive={eegReactive}
+        audioReactiveMode={audioReactiveMode}
+        tuning={tuning}
+        compact={compact}
+        rollingRaw={rollingRaw}
+        estimatedEegHz={estimatedEegHz}
+      />
+    );
+  }
+
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const dataRef = React.useRef({
     latestBandsAbs,
@@ -186,6 +252,11 @@ export function ConcertVisualizer({
     trails,
     showHud,
     simAudioReactive,
+    eegReactive,
+    audioReactiveMode,
+    tuning,
+    rollingRaw,
+    estimatedEegHz,
   });
 
   React.useEffect(() => {
@@ -197,8 +268,26 @@ export function ConcertVisualizer({
       trails,
       showHud,
       simAudioReactive,
+      eegReactive,
+      audioReactiveMode,
+      tuning,
+      rollingRaw,
+      estimatedEegHz,
     };
-  }, [intensity, latestBandsAbs, latestBandTraces, scene, showHud, trails, simAudioReactive]);
+  }, [
+    intensity,
+    latestBandsAbs,
+    latestBandTraces,
+    scene,
+    showHud,
+    trails,
+    simAudioReactive,
+    eegReactive,
+    audioReactiveMode,
+    tuning,
+    rollingRaw,
+    estimatedEegHz,
+  ]);
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
@@ -207,7 +296,12 @@ export function ConcertVisualizer({
     if (!ctx) return;
 
     let raf = 0;
-    const particles = makeParticles(220);
+    const particles = makeParticles(320);
+    const artEnvelope = {
+      bands: null as BandVector | null,
+      channels: [0.25, 0.25, 0.25, 0.25],
+      audio: 0,
+    };
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -224,83 +318,123 @@ export function ConcertVisualizer({
       const h = rect.height;
       const now = timeMs / 1000;
       const data = dataRef.current;
-      const bands = normalizeBands(data.latestBandsAbs);
-      const channels = channelEnergy(data.latestBandTraces);
+      const rawBands = normalizeBands(data.latestBandsAbs);
+      const rawChannels = channelEnergy(data.latestBandTraces);
+      const { bands, channels, drawIntensity } = applyEegVisualTuning(
+        rawBands,
+        rawChannels,
+        data.tuning,
+        data.intensity,
+      );
       const audio = blendConcertAudioLevel(
         getConcertAudioLevel(),
         bands,
         channels,
         now,
-        data.simAudioReactive,
+        data.audioReactiveMode,
+        data.simAudioReactive || data.eegReactive,
+        data.tuning.arAudioMix,
       );
 
       ctx.fillStyle = `rgba(4, 5, 12, ${Math.max(0.04, 1 - data.trails)})`;
       ctx.fillRect(0, 0, w, h);
 
+      ctx.save();
+      if (data.tuning.brightness < 1) {
+        ctx.globalAlpha = data.tuning.brightness;
+      }
       paintBackdrop(ctx, w, h, bands, now);
+
+      const phase = concertPhase(now, audio, data.tuning.motionActivity);
+      const motion = concertMotion(drawIntensity, audio);
+
+      const isCalmArt = BRAIN_ART_SCENE_IDS.has(data.scene);
+      let sceneBands = bands;
+      let sceneChannels = channels;
+      let scenePhase = phase;
+      let sceneMotion = motion;
+      let sceneAudio = audio;
+      if (isCalmArt) {
+        const a = CONCERT_ART_CALM.envelopeAlpha;
+        if (!artEnvelope.bands) {
+          artEnvelope.bands = { ...bands };
+        } else {
+          artEnvelope.bands = smoothBandVector(artEnvelope.bands, bands, a);
+        }
+        artEnvelope.channels = artEnvelope.channels.map((c, i) =>
+          smoothToward(c, channels[i] ?? 0.25, a),
+        );
+        artEnvelope.audio = smoothToward(artEnvelope.audio, audio, a);
+        sceneBands = artEnvelope.bands;
+        sceneChannels = artEnvelope.channels;
+        sceneAudio = calmArtAudio(artEnvelope.audio);
+        scenePhase = calmArtTime(now, artEnvelope.audio) * data.tuning.motionActivity;
+        sceneMotion = calmArtMotion(drawIntensity, artEnvelope.audio);
+      }
 
       switch (data.scene) {
         case "auroraBrain":
-          drawAuroraBrain(ctx, w, h, bands, channels, now, data.intensity);
-          break;
-        case "neuralCathedral":
-          drawNeuralCathedral(ctx, w, h, bands, channels, now, data.intensity);
+          drawAuroraBrain(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "corticalBloom":
-          drawCorticalBloom(ctx, w, h, bands, channels, now, data.intensity);
+          drawCorticalBloom(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "spectralTunnel":
-          drawSpectralTunnel(ctx, w, h, bands, channels, now, data.intensity);
+          drawSpectralTunnel(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "synapticStorm":
-          drawSynapticStorm(ctx, w, h, bands, channels, particles, now, data.intensity);
+          drawSynapticStorm(ctx, w, h, bands, channels, particles, phase, motion, audio);
           break;
         case "dreamOcean":
-          drawDreamOcean(ctx, w, h, bands, channels, now, data.intensity);
+          drawDreamOcean(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "rotatingBrain":
-          drawRotatingBrain(ctx, w, h, bands, channels, now, data.intensity);
+          drawRotatingBrain(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "connectomeGalaxy":
-          drawConnectomeGalaxy(ctx, w, h, bands, channels, particles, now, data.intensity);
+          drawConnectomeGalaxy(ctx, w, h, bands, channels, particles, phase, motion, audio);
           break;
         case "holographicCortex":
-          drawHolographicCortex(ctx, w, h, bands, channels, now, data.intensity);
+          drawHolographicCortex(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "limbicNebula":
-          drawLimbicNebula(ctx, w, h, bands, channels, now, data.intensity);
+          drawLimbicNebula(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "pulseRingsAudio":
-          drawPulseRingsAudio(ctx, w, h, bands, channels, now, data.intensity, audio);
+          drawPulseRingsAudio(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "bassBloomAudio":
-          drawBassBloomAudio(ctx, w, h, bands, channels, now, data.intensity, audio);
-          break;
-        case "stereoShearWave":
-          drawStereoShearWave(ctx, w, h, bands, channels, now, data.intensity, audio);
-          break;
-        case "spectralCathedralAR":
-          drawSpectralCathedralAR(ctx, w, h, bands, channels, now, data.intensity, audio);
-          break;
-        case "scanlineWavefront":
-          drawScanlineWavefront(ctx, w, h, bands, channels, now, data.intensity, audio);
-          break;
-        case "sparkLatticeAR":
-          drawSparkLatticeAR(ctx, w, h, bands, channels, now, data.intensity, audio);
+          drawBassBloomAudio(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "harmonicOrbitsAR":
-          drawHarmonicOrbitsAR(ctx, w, h, bands, channels, now, data.intensity, audio);
+          drawHarmonicOrbitsAR(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "resonantMeshAR":
-          drawResonantMeshAR(ctx, w, h, bands, channels, now, data.intensity, audio);
+          drawResonantMeshAR(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "corticalLightningAR":
-          drawCorticalLightningAR(ctx, w, h, bands, channels, now, data.intensity, audio);
+          drawCorticalLightningAR(ctx, w, h, bands, channels, phase, motion, audio);
           break;
         case "phaseLockLattice":
-          drawPhaseLockLattice(ctx, w, h, bands, channels, now, data.intensity, audio);
+          drawPhaseLockLattice(ctx, w, h, bands, channels, phase, motion, audio);
+          break;
+        default:
+          if (BRAIN_ART_SCENE_IDS.has(data.scene)) {
+            drawConcertBrainArtScene(data.scene as ConcertBrainArtSceneId, {
+              ctx,
+              w,
+              h,
+              bands: sceneBands,
+              channels: sceneChannels,
+              particles,
+              t: scenePhase,
+              intensity: sceneMotion,
+              audio: sceneAudio,
+            });
+          }
           break;
       }
+      ctx.restore();
 
       if (data.showHud) drawHud(ctx, w, h, data.scene, bands, audio);
       raf = requestAnimationFrame(render);
@@ -313,24 +447,50 @@ export function ConcertVisualizer({
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="h-full min-h-[620px] w-full rounded-2xl bg-black" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className={
+        compact
+          ? "h-full min-h-[240px] w-full rounded-xl bg-black"
+          : "h-full min-h-[620px] w-full rounded-2xl bg-black"
+      }
+    />
+  );
 }
 
-/** When the simulator is on but Csound is silent, drive AR from band + channel energy. */
-function blendConcertAudioLevel(
-  rms: number,
+/** Motion/time scale from blended audio tap + EEG envelope (all scenes). */
+function concertPhase(t: number, audio: number, motionActivity: number): number {
+  return t * (1 + audio * 0.52) * motionActivity;
+}
+
+function concertMotion(intensity: number, audio: number): number {
+  return intensity * (0.68 + audio * 0.92);
+}
+
+function applyEegVisualTuning(
   bands: BandVector,
   channels: number[],
-  t: number,
-  useSimFallback: boolean,
-): number {
-  if (!useSimFallback) return rms;
-  const meanBand =
-    (bands.delta + bands.theta + bands.alpha + bands.beta + bands.gamma) / 5;
-  const ch = (channels[0] + channels[1] + channels[2] + channels[3]) / 4;
-  const wobble = Math.sin(t * 5.5 + meanBand * 8) * 0.07;
-  const pseudo = clamp(0.14 + meanBand * 0.52 + ch * 0.3 + wobble, 0, 1);
-  return Math.max(rms, pseudo);
+  tuning: ConcertVisualTuning,
+  intensity: number,
+): { bands: BandVector; channels: number[]; drawIntensity: number } {
+  const neutral = normalizeBands(null);
+  const influence = tuning.eegInfluence;
+  const sens = tuning.eegSensitivity;
+  const scaledBands = BAND_ORDER.reduce((acc, band) => {
+    const live = bands[band];
+    const blended = neutral[band] * (1 - influence) + live * influence;
+    acc[band] = clamp(blended * sens, 0, 1);
+    return acc;
+  }, {} as BandVector);
+  const scaledChannels = channels.map((c) =>
+    clamp((0.25 * (1 - influence) + c * influence) * sens, 0, 1),
+  );
+  return {
+    bands: scaledBands,
+    channels: scaledChannels,
+    drawIntensity: intensity * tuning.visualScale * tuning.brightness,
+  };
 }
 
 function normalizeBands(abs: BandPowers | null): BandVector {
@@ -390,6 +550,7 @@ function drawAuroraBrain(
   channels: number[],
   t: number,
   intensity: number,
+  audio: number,
 ) {
   const cx = w / 2;
   const cy = h * 0.52;
@@ -397,7 +558,7 @@ function drawAuroraBrain(
 
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.shadowBlur = 28 + bands.gamma * 45 * intensity;
+  ctx.shadowBlur = 28 + bands.gamma * 45 * intensity + audio * 32;
   ctx.shadowColor = "rgba(80, 255, 210, .7)";
 
   for (let layer = 0; layer < 7; layer += 1) {
@@ -439,55 +600,6 @@ function drawAuroraBrain(
   ctx.restore();
 }
 
-function drawNeuralCathedral(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  bands: BandVector,
-  channels: number[],
-  t: number,
-  intensity: number,
-) {
-  const floor = h * 0.88;
-  const columns = 18;
-  for (let i = 0; i < columns; i += 1) {
-    const p = i / (columns - 1);
-    const side = p < 0.5 ? -1 : 1;
-    const depth = Math.abs(p - 0.5) * 2;
-    const x = w * 0.5 + side * Math.pow(depth, 1.7) * w * 0.48;
-    const top = h * (0.14 + depth * 0.18);
-    const width = 8 + (1 - depth) * 18;
-    const band = BAND_ORDER[i % BAND_ORDER.length];
-    const pulse = bands[band] * intensity + channels[i % 4] * 0.5;
-    const grad = ctx.createLinearGradient(x, top, x, floor);
-    grad.addColorStop(0, rgba(BAND_COLORS[band], 0.05));
-    grad.addColorStop(0.45, rgba(BAND_COLORS[band], 0.18 + pulse * 0.42));
-    grad.addColorStop(1, rgba(BAND_COLORS[band], 0.02));
-    ctx.fillStyle = grad;
-    ctx.shadowBlur = 18 + pulse * 35;
-    ctx.shadowColor = rgba(BAND_COLORS[band], 0.75);
-    roundRect(ctx, x - width / 2, top, width, floor - top, width / 2);
-    ctx.fill();
-  }
-
-  ctx.shadowBlur = 20 + bands.gamma * 30;
-  for (let arch = 0; arch < 7; arch += 1) {
-    const band = BAND_ORDER[arch % BAND_ORDER.length];
-    ctx.beginPath();
-    const y = h * (0.18 + arch * 0.085);
-    ctx.ellipse(w / 2, y, w * (0.14 + arch * 0.065), h * (0.16 + arch * 0.025), 0, Math.PI, Math.PI * 2);
-    ctx.strokeStyle = rgba(BAND_COLORS[band], 0.22 + bands[band] * 0.5);
-    ctx.lineWidth = 2 + bands[band] * 6;
-    ctx.stroke();
-  }
-
-  const beam = ctx.createRadialGradient(w / 2, h * 0.35, 0, w / 2, h * 0.55, h * 0.7);
-  beam.addColorStop(0, `rgba(255,255,255,${0.08 + bands.alpha * 0.15})`);
-  beam.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = beam;
-  ctx.fillRect(0, 0, w, h);
-}
-
 function drawCorticalBloom(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -496,6 +608,7 @@ function drawCorticalBloom(
   channels: number[],
   t: number,
   intensity: number,
+  _audio: number,
 ) {
   const cx = w / 2;
   const cy = h / 2;
@@ -534,6 +647,7 @@ function drawSpectralTunnel(
   channels: number[],
   t: number,
   intensity: number,
+  _audio: number,
 ) {
   const cx = w / 2;
   const cy = h / 2;
@@ -572,9 +686,10 @@ function drawSynapticStorm(
   particles: Particle[],
   t: number,
   intensity: number,
+  audio: number,
 ) {
   ctx.globalCompositeOperation = "lighter";
-  const speed = 0.18 + bands.beta * 1.2 + bands.gamma * 1.6;
+  const speed = 0.18 + bands.beta * 1.2 + bands.gamma * 1.6 + audio * 1.4;
   for (const p of particles) {
     const band = BAND_ORDER[p.band];
     p.x += Math.cos(p.angle + t * 0.12) * speed * p.speed * intensity;
@@ -614,8 +729,11 @@ function drawDreamOcean(
   channels: number[],
   t: number,
   intensity: number,
+  audio: number,
 ) {
+  if (!(w > 1 && h > 1) || !Number.isFinite(t)) return;
   const horizon = h * (0.42 + Math.sin(t * 0.08) * 0.03);
+  const oceanDepth = Math.max(1, h - horizon);
   const ocean = ctx.createLinearGradient(0, horizon, 0, h);
   ocean.addColorStop(0, `rgba(20, 70, 120, ${0.25 + bands.theta * 0.25})`);
   ocean.addColorStop(1, `rgba(0, 8, 30, 1)`);
@@ -634,8 +752,8 @@ function drawDreamOcean(
       else ctx.lineTo(x, y + wave);
     }
     ctx.strokeStyle = rgba(BAND_COLORS[band], 0.14 + bands[band] * 0.42);
-    ctx.lineWidth = 1 + layer * 0.18 + intensity;
-    ctx.shadowBlur = 12 + bands[band] * 28;
+    ctx.lineWidth = 1 + layer * 0.18 + intensity + audio * 1.2;
+    ctx.shadowBlur = 12 + bands[band] * 28 + audio * 18;
     ctx.shadowColor = rgba(BAND_COLORS[band], 0.45);
     ctx.stroke();
   }
@@ -643,8 +761,11 @@ function drawDreamOcean(
   for (let i = 0; i < 42; i += 1) {
     const band = BAND_ORDER[i % BAND_ORDER.length];
     const x = ((i * 97.13 + t * (12 + bands.beta * 45)) % (w + 80)) - 40;
-    const y = horizon + ((i * 53.7 + Math.sin(t + i) * 30) % (h - horizon));
-    dot(ctx, x, y, 1.5 + bands[band] * 7 * intensity, rgba(BAND_COLORS[band], 0.22 + bands[band] * 0.58));
+    const y = horizon + ((i * 53.7 + Math.sin(t + i) * 30) % oceanDepth);
+    const sparkR = 1.5 + (bands[band] ?? 0) * 7 * intensity;
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(sparkR)) {
+      dot(ctx, x, y, sparkR, rgba(BAND_COLORS[band], 0.22 + (bands[band] ?? 0) * 0.58));
+    }
   }
 }
 
@@ -656,6 +777,7 @@ function drawRotatingBrain(
   channels: number[],
   t: number,
   intensity: number,
+  _audio: number,
 ) {
   const cx = w / 2;
   const cy = h * 0.52;
@@ -750,6 +872,7 @@ function drawConnectomeGalaxy(
   particles: Particle[],
   t: number,
   intensity: number,
+  audio: number,
 ) {
   const cx = w / 2;
   const cy = h / 2;
@@ -760,7 +883,7 @@ function drawConnectomeGalaxy(
     const band = BAND_ORDER[p.band];
     const radius = 0.22 + ((i * 0.037) % 1.15);
     const arm = i % 5;
-    const angle = t * (0.08 + bands.gamma * 0.18) + radius * 5 + arm * 1.26;
+    const angle = t * (0.08 + bands.gamma * 0.18 + audio * 0.12) + radius * 5 + arm * 1.26;
     const z = Math.sin(t * 0.22 + i * 0.17) * 0.9;
     const x = Math.cos(angle) * radius * (1 + channels[i % 4] * 0.5);
     const y = Math.sin(angle * 1.14) * radius * 0.62;
@@ -805,6 +928,7 @@ function drawHolographicCortex(
   channels: number[],
   t: number,
   intensity: number,
+  audio: number,
 ) {
   const cx = w / 2;
   const cy = h * 0.55;
@@ -851,8 +975,8 @@ function drawHolographicCortex(
   }
 
   for (let y = 0; y < h; y += 9) {
-    ctx.fillStyle = `rgba(120,255,230,${0.018 + bands.gamma * 0.018})`;
-    ctx.fillRect(0, y + Math.sin(t * 20 + y) * 2, w, 1);
+    ctx.fillStyle = `rgba(120,255,230,${0.018 + bands.gamma * 0.018 + audio * 0.02})`;
+    ctx.fillRect(0, y + Math.sin(t * (20 + audio * 12) + y) * 2, w, 1);
   }
 
   for (let i = 0; i < 36; i += 1) {
@@ -872,6 +996,7 @@ function drawLimbicNebula(
   channels: number[],
   t: number,
   intensity: number,
+  _audio: number,
 ) {
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
@@ -996,153 +1121,6 @@ function drawBassBloomAudio(
   ctx.restore();
 }
 
-function drawStereoShearWave(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  bands: BandVector,
-  channels: number[],
-  t: number,
-  intensity: number,
-  audio: number,
-) {
-  const mid = w / 2;
-  const lEnergy = (channels[0] + channels[1]) * 0.5;
-  const rEnergy = (channels[2] + channels[3]) * 0.5;
-  ctx.save();
-  for (let side = 0; side < 2; side += 1) {
-    const leftSide = side === 0;
-    const chMix = leftSide ? lEnergy : rEnergy;
-    const x0 = leftSide ? 0 : mid;
-    const ww = leftSide ? mid : w - mid;
-    for (let layer = 0; layer < 9; layer += 1) {
-      const band = BAND_ORDER[(layer + side * 2) % BAND_ORDER.length];
-      ctx.beginPath();
-      for (let x = 0; x <= ww; x += 6) {
-        const gx = x0 + x;
-        const shear =
-          Math.sin(x * 0.014 + t * (0.35 + bands.beta * 0.8) + layer) *
-            (18 + chMix * 80 + audio * 95) *
-            intensity +
-          Math.sin(t * (1.2 + audio * 3) + gx * 0.01) * audio * 40;
-        const yy = h * (0.12 + layer * 0.095) + shear;
-        if (x === 0) ctx.moveTo(gx, yy);
-        else ctx.lineTo(gx, yy);
-      }
-      ctx.strokeStyle = rgba(BAND_COLORS[band], 0.14 + bands[band] * 0.42 + audio * 0.2);
-      ctx.lineWidth = 1.2 + bands[band] * 3 + audio * 3;
-      ctx.stroke();
-    }
-  }
-  ctx.strokeStyle = `rgba(255,255,255,${0.08 + audio * 0.15})`;
-  ctx.beginPath();
-  ctx.moveTo(mid, 0);
-  ctx.lineTo(mid, h);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawSpectralCathedralAR(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  bands: BandVector,
-  channels: number[],
-  t: number,
-  intensity: number,
-  audio: number,
-) {
-  const floor = h * 0.9;
-  const columns = 16;
-  for (let i = 0; i < columns; i += 1) {
-    const p = i / (columns - 1);
-    const side = p < 0.5 ? -1 : 1;
-    const depth = Math.abs(p - 0.5) * 2;
-    const x = w * 0.5 + side * Math.pow(depth, 1.65) * w * 0.46;
-    const top = h * (0.1 + depth * 0.16);
-    const width = 6 + (1 - depth) * 16;
-    const band = BAND_ORDER[i % BAND_ORDER.length];
-    const spike = audio * (90 + bands.gamma * 60) * intensity;
-    const grad = ctx.createLinearGradient(x, top - spike, x, floor);
-    grad.addColorStop(0, rgba(BAND_COLORS[band], 0.2 + audio * 0.55));
-    grad.addColorStop(0.5, rgba(BAND_COLORS[band], 0.12 + bands[band] * 0.35));
-    grad.addColorStop(1, rgba(BAND_COLORS[band], 0.02));
-    ctx.fillStyle = grad;
-    ctx.shadowBlur = 22 + audio * 55 + bands[band] * 30;
-    ctx.shadowColor = rgba(BAND_COLORS[band], 0.8);
-    roundRect(ctx, x - width / 2, top - spike, width, floor - top + spike, width / 2);
-    ctx.fill();
-  }
-  const beam = ctx.createRadialGradient(w / 2, h * 0.28, 0, w / 2, h * 0.5, h * 0.65);
-  beam.addColorStop(0, `rgba(255,255,255,${0.06 + audio * 0.22})`);
-  beam.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = beam;
-  ctx.fillRect(0, 0, w, h);
-}
-
-function drawScanlineWavefront(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  bands: BandVector,
-  channels: number[],
-  t: number,
-  intensity: number,
-  audio: number,
-) {
-  const lines = Math.floor(h / 5);
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  for (let i = 0; i < lines; i += 1) {
-    const yBase = (i / lines) * h;
-    const band = BAND_ORDER[i % BAND_ORDER.length];
-    ctx.beginPath();
-    for (let x = 0; x <= w; x += 4) {
-      const v =
-        Math.sin(x * 0.008 + t * (0.5 + audio * 4 + bands.beta) + i * 0.4) *
-          (6 + bands[band] * 28 + audio * 55) *
-          intensity +
-        channels[i % 4] * 20 * audio;
-      if (x === 0) ctx.moveTo(x, yBase + v);
-      else ctx.lineTo(x, yBase + v);
-    }
-    ctx.strokeStyle = rgba(BAND_COLORS[band], 0.1 + bands[band] * 0.35 + audio * 0.35);
-    ctx.lineWidth = 0.8 + audio * 3;
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawSparkLatticeAR(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  bands: BandVector,
-  channels: number[],
-  t: number,
-  intensity: number,
-  audio: number,
-) {
-  const cols = 18;
-  const rows = 12;
-  const cellW = w / cols;
-  const cellH = h / rows;
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const band = BAND_ORDER[(row + col) % BAND_ORDER.length];
-      const cx = col * cellW + cellW / 2;
-      const cy = row * cellH + cellH / 2;
-      const gate = bands[band] * 0.45 + channels[(row + col) % 4] * 0.35 + audio * 0.5;
-      if (gate < 0.25 && audio < 0.08) continue;
-      const sz = (1.5 + gate * 10 + audio * 14) * intensity;
-      dot(ctx, cx, cy, sz, rgba(BAND_COLORS[band], 0.25 + gate * 0.65));
-    }
-  }
-  ctx.restore();
-}
-
 function drawHarmonicOrbitsAR(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -1257,18 +1235,19 @@ function drawCorticalLightningAR(
     ctx.moveTo(cx, cy);
     let px = cx;
     let py = cy;
-    const segs = 5 + Math.floor(audio * 8);
+    const segs = 4 + Math.floor(audio * 4);
     for (let k = 1; k <= segs; k += 1) {
       const fk = k / segs;
-      const jitter = (Math.sin(t * 8 + s + k * 3) * 18 + Math.cos(t * 11 + k)) * audio * intensity;
+      const jitter =
+        (Math.sin(t * 8 + s + k * 3) * 6 + Math.cos(t * 11 + k)) * audio * intensity * 0.35;
       px = cx + Math.cos(a0 + fk * 0.4) * reach * fk + jitter;
       py = cy + Math.sin(a0 + fk * 0.35) * reach * fk * 0.82 + jitter * 0.7;
+      if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
       ctx.lineTo(px, py);
     }
-    ctx.strokeStyle = rgba(BAND_COLORS[band], 0.15 + bands[band] * 0.4 + audio * 0.45);
-    ctx.lineWidth = 1.2 + audio * 5;
-    ctx.shadowBlur = 12 + audio * 40;
-    ctx.shadowColor = rgba(BAND_COLORS.gamma, 0.9);
+    ctx.strokeStyle = rgba(BAND_COLORS[band], 0.1 + bands[band] * 0.32 + audio * 0.28);
+    ctx.lineWidth = 0.8 + audio * 2.2;
+    ctx.shadowBlur = 0;
     ctx.stroke();
   }
   ctx.restore();
@@ -1326,34 +1305,31 @@ function drawHud(
   audio: number,
 ) {
   const spec = concertSceneSpec(scene);
-  const isAr = CONCERT_SHIFT_SCENES.some((s) => s.id === scene);
   ctx.save();
   ctx.fillStyle = "rgba(0,0,0,.32)";
-  const hudH = isAr ? 124 : 108;
+  const hudH = 124;
   roundRect(ctx, 24, 24, Math.min(480, w - 48), hudH, 18);
   ctx.fill();
   ctx.fillStyle = "rgba(244,244,245,.92)";
   ctx.font = "600 22px Inter, system-ui, sans-serif";
   ctx.fillText(spec?.title ?? "Concert Visualizer", 46, 62);
-  if (isAr) {
-    ctx.font = "11px JetBrains Mono, monospace";
-    ctx.fillStyle = "rgba(167,243,208,.88)";
-    ctx.fillText(
-      `Drive ${Math.round(audio * 100)}% · Csound RMS or simulator band-sync`,
-      46,
-      82,
-    );
-  }
+  ctx.font = "11px JetBrains Mono, monospace";
+  ctx.fillStyle = "rgba(167,243,208,.88)";
+  ctx.fillText(
+    `Drive ${Math.round(audio * 100)}% · EEG bands + audio (mic/WASM/EEG mix)`,
+    46,
+    82,
+  );
   ctx.font = "12px JetBrains Mono, monospace";
   let x = 46;
-  const bandY = isAr ? 106 : 98;
+  const bandY = 106;
   for (const band of BAND_ORDER) {
     ctx.fillStyle = rgba(BAND_COLORS[band], 0.9);
     ctx.fillText(`${band.slice(0, 2).toUpperCase()} ${Math.round(bands[band] * 100)}`, x, bandY);
     x += 72;
   }
   ctx.fillStyle = "rgba(161,161,170,.75)";
-  ctx.fillText("F fullscreen · H HUD · C controls · 1–9,0 scenes · ⌥1–⌥0 audio-reactive", 46, h - 28);
+  ctx.fillText("F fullscreen · H HUD · C controls · scenes: use Concert panel · sensekey → Csound console", 46, h - 28);
   ctx.restore();
 }
 
@@ -1404,38 +1380,3 @@ function makeParticles(count: number): Particle[] {
   }));
 }
 
-function dot(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r * 3.5);
-  g.addColorStop(0, color);
-  g.addColorStop(0.45, color.replace(/[\d.]+\)$/u, "0.18)"));
-  g.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(x, y, r * 3.5, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
-function rgba([r, g, b]: [number, number, number], a: number) {
-  return `rgba(${r}, ${g}, ${b}, ${clamp(a, 0, 1)})`;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}

@@ -8,7 +8,12 @@ import { Button } from "@/components/ui/Button";
 import { CopyableConsole } from "@/components/ui/CopyableConsole";
 import { Slider } from "@/components/ui/Slider";
 import type { BandName, BandPowers, EEGMessage } from "@/lib/types";
-import { attachConcertAudioMeter, getConcertAudioLevel, stopConcertAudioMeter } from "@/lib/concertAudioMeter";
+import {
+  attachConcertWasmMeter,
+  detachConcertWasmMeter,
+  getConcertAudioLevel,
+  stopConcertAudioMeter,
+} from "@/lib/concertAudioMeter";
 import {
   yieldAfterCsoundStart,
   yieldAfterOrchestraCompiled,
@@ -156,6 +161,8 @@ export function CsoundV12Renderer({
   motion,
   batteryPct,
   workstationId = "v12",
+  enableConcertWasmMeter = false,
+  onStatusChange,
 }: {
   controls: V12RenderControls;
   latestEEG?: EEGMessage | null;
@@ -164,6 +171,9 @@ export function CsoundV12Renderer({
   motion?: MotionStreams | null;
   batteryPct?: number | null;
   workstationId?: NeuroVisWorkstationId;
+  /** When true, tap WASM output for Concert ⌥-scenes (mic/wasm/blend modes). */
+  enableConcertWasmMeter?: boolean;
+  onStatusChange?: (status: "idle" | "loading" | "compiled" | "running" | "paused" | "error") => void;
 }) {
   const csoundRef = React.useRef<CsoundObj | null>(null);
   const audioContextRef = React.useRef<AudioContext | null>(null);
@@ -211,6 +221,16 @@ export function CsoundV12Renderer({
   >("default");
 
   const playwrightE2E = process.env.NEXT_PUBLIC_PLAYWRIGHT === "1";
+
+  React.useEffect(() => {
+    onStatusChange?.(status);
+  }, [status, onStatusChange]);
+
+  React.useEffect(() => {
+    if (!enableConcertWasmMeter) {
+      detachConcertWasmMeter();
+    }
+  }, [enableConcertWasmMeter]);
 
   React.useEffect(() => {
     if (!playwrightE2E || typeof window === "undefined") return;
@@ -471,14 +491,14 @@ export function CsoundV12Renderer({
       appendLog("Browser engine: CC28 = level · CC25 = arp depth · CC26 = arp speed (full V12 arp = desktop CSD).");
       try {
         const node = await csound.getNode();
-        if (node) {
+        if (node && enableConcertWasmMeter) {
           /** Must use `node.context` — analyser on a different BaseAudioContext throws and leaves RMS at 0. */
           const an = node.context.createAnalyser();
           an.fftSize = 512;
           an.smoothingTimeConstant = 0.55;
           /** Parallel tap only — do not chain analyser→destination (duplicate pulls confused Chrome in the wild). */
           node.connect(an);
-          attachConcertAudioMeter(an);
+          attachConcertWasmMeter(an);
           if (playwrightE2E && typeof window !== "undefined") {
             const w = window as Window & { __nvMeterProbe?: () => number };
             w.__nvMeterProbe = () => {
@@ -492,7 +512,9 @@ export function CsoundV12Renderer({
               return peak;
             };
           }
-          appendLog("Concert meter: parallel analyser tap (does not change speaker path).");
+          appendLog("Concert meter: WASM → audioreactive visualizer (parallel tap).");
+        } else if (!enableConcertWasmMeter) {
+          appendLog("Concert WASM meter off — enable “Browser Csound” or Blend in Audioreactive source.");
         } else {
           appendLog("Concert meter: skipped — no Csound output node after start().");
         }
@@ -1037,7 +1059,7 @@ export function CsoundV12Renderer({
           <label className="block space-y-1.5">
             <span className="text-xs text-zinc-400">EEG orchestra</span>
             <select
-              className="h-9 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-emerald-500/70"
+              className="nv-select outline-none focus:border-emerald-500/70"
               value={orchestraModel}
               onChange={(event) => setOrchestraModel(Number(event.target.value))}
             >
@@ -1054,7 +1076,7 @@ export function CsoundV12Renderer({
           <label className="block space-y-1.5">
             <span className="text-xs text-zinc-400">Sound preset</span>
             <select
-              className="h-9 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-emerald-500/70"
+              className="nv-select outline-none focus:border-emerald-500/70"
               value={soundPreset}
               onChange={(event) => setSoundPreset(Number(event.target.value))}
             >
@@ -1071,7 +1093,7 @@ export function CsoundV12Renderer({
           <label className="block space-y-1.5">
             <span className="text-xs text-zinc-400">Audio output device</span>
             <select
-              className="h-9 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-emerald-500/70"
+              className="nv-select outline-none focus:border-emerald-500/70"
               value={selectedAudioOutputId}
               onChange={(event) => setSelectedAudioOutputId(event.target.value)}
               onFocus={refreshAudioOutputs}
@@ -1275,7 +1297,7 @@ export function CsoundV12Renderer({
           <label className="space-y-1.5">
             <span className="text-xs text-zinc-400">MIDI keyboard/controller</span>
             <select
-              className="h-9 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-emerald-500/70"
+              className="nv-select outline-none focus:border-emerald-500/70"
               value={selectedMidiInputId}
               onChange={(event) => setSelectedMidiInputId(event.target.value)}
               disabled={!midiInputs.length}

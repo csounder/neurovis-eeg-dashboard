@@ -46,6 +46,12 @@ This document summarizes the React/Next.js migration and related work, and inclu
 
 ---
 
+## Concert mode (2026-06)
+
+Full performance UI at **`/concert`**: 53 scenes (2D + WebGL TF lace/macro), tuning HUD (EEG + GL + motion), NIME headless/CsoundQt patches, keyboard **↑↓** scenes / **←→** patch+launch, performance presets. Canonical doc: **[docs/CONCERT-MODE.md](./CONCERT-MODE.md)**. Legacy `public/` HTML visualizers removed; Next.js + `server-enhanced.js` only.
+
+---
+
 ## Major features (implemented)
 
 - **Shell:** Sidebar, TopBar, dark theme, navigation for all main routes.

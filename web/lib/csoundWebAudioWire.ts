@@ -1,5 +1,5 @@
 import type { CsoundObj } from "@csound/browser";
-import { attachConcertAudioMeter } from "@/lib/concertAudioMeter";
+import { attachConcertWasmMeter } from "@/lib/concertAudioMeter";
 
 /**
  * Connect Csound's output for hearing + optional RMS tap.
@@ -21,7 +21,7 @@ function connectCsoundOutputGraph(
     const silent = audioContext.createGain();
     silent.gain.value = 0;
     analyser.connect(silent).connect(audioContext.destination);
-    attachConcertAudioMeter(analyser);
+    attachConcertWasmMeter(analyser);
   }
 }
 

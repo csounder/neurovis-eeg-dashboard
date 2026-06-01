@@ -11,6 +11,7 @@ import type {
   EEGMessage,
   EegTraceSource,
   NeuroVisSettings,
+  CsoundConsoleLine,
   ResearchEventBridgeMessage,
   ServerMessage,
 } from "./types";
@@ -153,6 +154,10 @@ interface NeuroState {
   };
   mindMonitor: MindMonitorKnownStreams;
 
+  /** Headless Csound patch stdout/stderr (sensekey / printks). */
+  csoundConsoleLines: CsoundConsoleLine[];
+  headlessCsoundRunning: boolean;
+
   // Calibration
   calibration: {
     isCalibrating: boolean;
@@ -206,6 +211,23 @@ interface NeuroState {
 
 const ROLLING_SAMPLES = 1024; // ~4 seconds at 256Hz
 const BAND_HISTORY_LEN = 600; // 60s @ 10Hz
+const CSOUND_CONSOLE_MAX = 800;
+
+function mergeCsoundConsoleLines(
+  prev: CsoundConsoleLine[],
+  incoming: CsoundConsoleLine[],
+): CsoundConsoleLine[] {
+  const seen = new Set(prev.map((l) => l.id));
+  const merged = [...prev];
+  for (const line of incoming) {
+    if (seen.has(line.id)) continue;
+    seen.add(line.id);
+    merged.push(line);
+  }
+  return merged.length > CSOUND_CONSOLE_MAX
+    ? merged.slice(merged.length - CSOUND_CONSOLE_MAX)
+    : merged;
+}
 
 function pushRing<T>(arr: T[], value: T, max: number): T[] {
   const next = arr.length >= max ? arr.slice(arr.length - max + 1) : arr.slice();
@@ -399,6 +421,9 @@ export const useNeuroStore = create<NeuroState>((set, get) => ({
   researchEvents: [],
   lastStimulusClock: null,
   researchEyesContext: "unspecified",
+
+  csoundConsoleLines: [],
+  headlessCsoundRunning: false,
 
   motion: { accel: null, gyro: null, ppg: null, fnirs: null },
   mindMonitorOsc: { addresses: {}, recent: [] },
@@ -627,8 +652,11 @@ export const useNeuroStore = create<NeuroState>((set, get) => ({
           const row = Array.from({ length: n }, (_, i) => Number(processed[i]) || 0);
           recorder.pushEEGSample(row, dsp.lastArtifact ? 1 : 0);
         }
+        // Overview / Raw pages: always ring-buffer true bridge µV (not server 0–1 scaled `processed`).
+        const rawUv =
+          m.raw && m.raw.length >= 4 ? m.raw : processed;
         const rolling = get().rollingRaw.map((buf, ch) => {
-          const v = processed?.[ch];
+          const v = rawUv?.[ch];
           if (v === undefined || v === null) return buf;
           return pushRing(buf, v, ROLLING_SAMPLES);
         });
@@ -861,6 +889,34 @@ export const useNeuroStore = create<NeuroState>((set, get) => ({
             secondsElapsed: m.secondsElapsed ?? 0,
             secondsTotal: m.secondsTotal ?? 90,
           },
+          lastMessageAt: now,
+        });
+        break;
+      }
+      case "csound_console": {
+        const m = msg as { lines?: CsoundConsoleLine[] };
+        const incoming = m.lines ?? [];
+        if (!incoming.length) break;
+        set((st) => ({
+          csoundConsoleLines: mergeCsoundConsoleLines(st.csoundConsoleLines, incoming),
+          lastMessageAt: now,
+        }));
+        break;
+      }
+      case "csound_console_snapshot": {
+        const m = msg as { lines?: CsoundConsoleLine[]; running?: boolean };
+        set({
+          csoundConsoleLines: m.lines ?? [],
+          headlessCsoundRunning: Boolean(m.running),
+          lastMessageAt: now,
+        });
+        break;
+      }
+      case "instrument_status": {
+        const m = msg as { running?: boolean; mode?: string };
+        set({
+          headlessCsoundRunning:
+            Boolean(m.running) && m.mode !== "csoundqt_editing",
           lastMessageAt: now,
         });
         break;

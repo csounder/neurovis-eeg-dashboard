@@ -96,8 +96,9 @@ export function PerformancePresetShareCard({ capture, onApply, className }: Prop
         <span className="font-semibold">Share performance preset</span>
       </div>
       <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
-        Export a single JSON file with concert visuals, V12 audio mapping, and optionally the Research band-edge
-        preset. Send the file to another machine; open Concert and use Import to match your stage setup.
+        Saves the full Concert setup: scene, visual tuning (EEG + AR mix), tuning/performance layout, Csound HUD
+        mirror, stage intensity, V12 controls, and optional Research band edges. Use before a show; Import or tap a
+        saved chip to recall.
       </p>
 
       <div className="grid gap-2 sm:grid-cols-2">

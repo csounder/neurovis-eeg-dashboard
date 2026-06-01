@@ -129,6 +129,13 @@ export default function OverviewPage() {
             </CardTitle>
           </CardHeader>
           <CardBody className="space-y-3 p-0">
+            <p className="px-5 pt-3 text-[11px] leading-relaxed text-zinc-500">
+              Traces are <span className="text-zinc-300">true µV</span> from the headset (not the server&apos;s 0–1
+              display scale). Resting Muse often peaks around <span className="font-mono text-zinc-400">20–80 µV</span>
+              per channel — if waves look flat, lower manual Y to about ±60 or leave <span className="text-zinc-300">Auto</span> on.
+              Check live numbers on <Link href="/raw" className="text-sky-400 underline underline-offset-2">Raw EEG</Link> or{" "}
+              <Link href="/stats" className="text-sky-400 underline underline-offset-2">Stats</Link>.
+            </p>
             <RawEEGChart
               height={320}
               autoScale={rawScale.auto}
@@ -186,18 +193,24 @@ export default function OverviewPage() {
         </CardHeader>
         <CardBody className="space-y-4">
           <p className="text-xs leading-relaxed text-zinc-500">
-            <span className="text-zinc-400">δ looking inflated?</span> Band bars use the server Welch estimate, now fed from{" "}
-            <span className="text-zinc-300">CAR + notch + bandpass µV</span> (same chain as DSP) so slow drift is not mixed with raw
-            samples. You can still raise the δ integration floor via{" "}
+            <span className="text-zinc-400">δ too high?</span> That usually means{" "}
+            <span className="text-zinc-300">slow drift / motion / poor fit</span> counted as delta power — not real deep sleep.
+            Fix on the server first: open{" "}
+            <Link href="/dsp" className="text-sky-400 underline decoration-sky-500/40 underline-offset-2 hover:text-sky-300">
+              DSP
+            </Link>{" "}
+            and confirm <span className="text-zinc-300">CAR</span>, <span className="text-zinc-300">notch</span> (50 or 60 Hz), and{" "}
+            <span className="text-zinc-300">bandpass 1–45 Hz</span> are on, then <span className="text-zinc-300">Save to server</span>.
+            Band bars use Welch on that conditioned signal (δ integrated as{" "}
+            <span className="font-mono text-zinc-300">1–4 Hz</span>). Still noisy? Try bandpass low edge{" "}
+            <span className="font-mono text-zinc-300">2 Hz</span> on DSP, tighten electrode fit, or{" "}
             <Link
               href="/research#band-integration-preset"
               className="text-sky-400 underline decoration-sky-500/40 underline-offset-2 hover:text-sky-300"
             >
               Research → Band integration preset
-            </Link>{" "}
-            (<span className="text-zinc-300">Research · stricter δ</span> = δ{" "}
-            <span className="font-mono text-zinc-300">1–4 Hz</span>). Active preset:{" "}
-            <span className="font-mono text-zinc-300">{bandEdgeLabel}</span>.
+            </Link>
+            . Active: <span className="font-mono text-zinc-300">{bandEdgeLabel}</span>.
           </p>
           <BandBars
             mode="relative"

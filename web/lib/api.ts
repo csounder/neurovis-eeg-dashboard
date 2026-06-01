@@ -122,8 +122,33 @@ export const api = {
     }),
   instrumentStatus: () => request("/api/instruments/status"),
 
+  csoundPatches: () => request("/api/csound/patches"),
+  launchCsoundPatch: (body: {
+    library: "nime" | "examples";
+    id: string;
+    mode?: "headless" | "csoundqt";
+  }) =>
+    request("/api/csound/patches/launch", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  stopCsoundPatch: () =>
+    request("/api/csound/patches/stop", { method: "POST" }),
+  csoundConsole: () => request("/api/csound/console"),
+
   startGanglion: () =>
     request("/api/ganglion/start", { method: "POST" }),
   stopGanglion: () =>
     request("/api/ganglion/stop", { method: "POST" }),
+
+  openBciBoards: () => request("/api/openbci/boards"),
+  startOpenBci: (body: {
+    board: "ganglion" | "cyton" | "ultracortex";
+    serial_port?: string;
+  }) =>
+    request("/api/openbci/start", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  stopOpenBci: () => request("/api/openbci/stop", { method: "POST" }),
 };

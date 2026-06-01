@@ -41,7 +41,7 @@ From **repo root**:
 
 ```bash
 cd /path/to/NeuroVis
-npm install
+npm run install:root   # includes brainflow; koffi compile may take 5–15 min — use Node 22 LTS
 
 cd web && npm install && cd ..
 ```
@@ -65,14 +65,14 @@ Wait for the usual **HTTP 3000** / **WebSocket 8080** ready messages.
 **Start the Ganglion stream** (from any second shell or after server is ready):
 
 ```bash
-curl -X POST http://localhost:3000/api/ganglion/start
+curl -X POST http://localhost:3000/api/openbci/start \
+  -H 'Content-Type: application/json' \
+  -d '{"board":"ganglion","serial_port":"/dev/cu.usbmodemYOURPORT"}'
 ```
 
-**Stop:**
+Or legacy: `curl -X POST http://localhost:3000/api/ganglion/start`
 
-```bash
-curl -X POST http://localhost:3000/api/ganglion/stop
-```
+**Stop:** `curl -X POST http://localhost:3000/api/openbci/stop`
 
 ### Terminal 2 — Next.js UI
 
