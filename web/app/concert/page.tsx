@@ -30,6 +30,8 @@ import {
 } from "@/components/concert/ConcertNimePatchPanel";
 import { ConcertCsoundConsole } from "@/components/concert/ConcertCsoundConsole";
 import { ConcertEegStreamStatus } from "@/components/concert/ConcertEegStreamStatus";
+import { ConcertGroupPanel } from "@/components/concert/ConcertGroupPanel";
+import { ConcertPerformanceRecorderPanel } from "@/components/concert/ConcertPerformanceRecorderPanel";
 import { ConcertStageTuningHud } from "@/components/concert/ConcertStageTuningHud";
 import { ConcertVisualTuningPanel } from "@/components/concert/ConcertVisualTuningPanel";
 import { useCsoundSensekeyForward } from "@/lib/useCsoundSensekey";
@@ -229,11 +231,52 @@ export default function ConcertPage() {
   const [sceneRotation, setSceneRotation] = React.useState<ConcertSceneRotationSettings>(
     DEFAULT_CONCERT_SCENE_ROTATION,
   );
+  const [visualQueue, setVisualQueue] = React.useState<ConcertScene[]>([]);
+  const [patchQueue, setPatchQueue] = React.useState<string[]>([]);
+  const [showActive, setShowActive] = React.useState(false);
+  const [visualQueueIndex, setVisualQueueIndex] = React.useState(0);
+  const [patchQueueIndex, setPatchQueueIndex] = React.useState(0);
+  const [visualDwell, setVisualDwell] = React.useState(0);
+  const [patchDwell, setPatchDwell] = React.useState(0);
 
   React.useEffect(() => {
     setSceneRotation(readConcertSceneRotation());
   }, []);
   const [wasmCsoundRunning, setWasmCsoundRunning] = React.useState(false);
+
+  const showRef = React.useRef({
+    showActive: false,
+    visualQueue: [] as ConcertScene[],
+    patchQueue: [] as string[],
+    visualQueueIndex: 0,
+    patchQueueIndex: 0,
+  });
+  showRef.current = { showActive, visualQueue, patchQueue, visualQueueIndex, patchQueueIndex };
+
+  const stepVisualInQueue = React.useCallback((delta: -1 | 1) => {
+    const { showActive: on, visualQueue: vq, visualQueueIndex: qi } = showRef.current;
+    if (on) {
+      if (vq.length === 0) return;
+      const next = (qi + delta + vq.length) % vq.length;
+      setVisualQueueIndex(next);
+      setScene(vq[next]!);
+      return;
+    }
+    setScene((current) => stepConcertScene(current, delta));
+  }, []);
+
+  const stepPatchInQueue = React.useCallback((delta: -1 | 1) => {
+    const { showActive: on, patchQueue: pq, patchQueueIndex: pi } = showRef.current;
+    if (on) {
+      if (pq.length === 0) return;
+      const next = (pi + delta + pq.length) % pq.length;
+      setPatchQueueIndex(next);
+      void nimePatchRef.current?.launchPatchId(pq[next]!);
+      nimePatchRef.current?.setSelectedId(pq[next]!);
+      return;
+    }
+    nimePatchRef.current?.stepPatch(delta);
+  }, []);
 
   const updateSceneRotation = React.useCallback((next: ConcertSceneRotationSettings) => {
     setSceneRotation(next);
@@ -249,13 +292,49 @@ export default function ConcertPage() {
   }, []);
 
   React.useEffect(() => {
-    if (!sceneRotation.enabled) return;
+    if (!sceneRotation.enabled || showActive) return;
     const ms = sceneRotation.intervalSeconds * 1000;
     const id = window.setInterval(() => {
       setScene((current) => pickRandomConcertScene(current));
     }, ms);
     return () => window.clearInterval(id);
-  }, [sceneRotation.enabled, sceneRotation.intervalSeconds]);
+  }, [sceneRotation.enabled, sceneRotation.intervalSeconds, showActive]);
+
+  React.useEffect(() => {
+    if (!showActive) return;
+    const timers: number[] = [];
+    if (visualDwell > 0 && visualQueue.length > 1) {
+      timers.push(
+        window.setInterval(() => stepVisualInQueue(1), visualDwell * 1000) as number,
+      );
+    }
+    if (patchDwell > 0 && patchQueue.length > 1) {
+      timers.push(
+        window.setInterval(() => stepPatchInQueue(1), patchDwell * 1000) as number,
+      );
+    }
+    return () => timers.forEach((id) => window.clearInterval(id));
+  }, [showActive, visualDwell, patchDwell, visualQueue.length, patchQueue.length, stepVisualInQueue, stepPatchInQueue]);
+
+  const playShow = React.useCallback(() => {
+    if (sceneRotation.enabled) {
+      updateSceneRotation({ ...sceneRotation, enabled: false });
+    }
+    setShowActive(true);
+    if (visualQueue.length > 0) {
+      setVisualQueueIndex(0);
+      setScene(visualQueue[0]!);
+    }
+    if (patchQueue.length > 0) {
+      setPatchQueueIndex(0);
+      nimePatchRef.current?.setSelectedId(patchQueue[0]!);
+      void nimePatchRef.current?.launchPatchId(patchQueue[0]!);
+    }
+  }, [sceneRotation, updateSceneRotation, visualQueue, patchQueue]);
+
+  const stopShow = React.useCallback(() => {
+    setShowActive(false);
+  }, []);
 
   useCsoundSensekeyForward(desktopCsoundRunning && !tuningMode);
 
@@ -266,22 +345,22 @@ export default function ConcertPage() {
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setScene((current) => stepConcertScene(current, -1));
+        stepVisualInQueue(-1);
         return;
       }
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setScene((current) => stepConcertScene(current, 1));
+        stepVisualInQueue(1);
         return;
       }
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        nimePatchRef.current?.stepPatch(-1);
+        stepPatchInQueue(-1);
         return;
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        nimePatchRef.current?.stepPatch(1);
+        stepPatchInQueue(1);
         return;
       }
       if (event.key === "f" || event.key === "F") {
@@ -295,7 +374,7 @@ export default function ConcertPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [stepVisualInQueue, stepPatchInQueue]);
 
   const spec = concertSceneSpec(scene) ?? ALL_CONCERT_SCENES[0];
 
@@ -421,7 +500,8 @@ export default function ConcertPage() {
           </Button>
         </div>
         <p className="text-[10px] text-zinc-600">
-          <kbd className="text-zinc-500">↑↓</kbd> prev/next visual · <kbd className="text-zinc-500">←→</kbd> NIME patch + launch
+          <kbd className="text-zinc-500">↑↓</kbd> visual queue · <kbd className="text-zinc-500">←→</kbd> patch queue
+          {showActive ? " (show)" : ""}
           · <kbd className="text-zinc-500">T</kbd> tuning · <kbd className="text-zinc-500">U</kbd> stage HUD ·{" "}
           <kbd className="text-zinc-500">H</kbd> overlay · <kbd className="text-zinc-500">M</kbd> Csound mirror
         </p>
@@ -440,6 +520,29 @@ export default function ConcertPage() {
       />
 
       <ConcertEegStreamStatus />
+
+      <ConcertPerformanceRecorderPanel stageRef={stageRef} />
+
+      <ConcertGroupPanel
+        scene={scene}
+        onSceneChange={setScene}
+        visualQueue={visualQueue}
+        onVisualQueueChange={setVisualQueue}
+        patchQueue={patchQueue}
+        onPatchQueueChange={setPatchQueue}
+        showActive={showActive}
+        visualQueueIndex={visualQueueIndex}
+        patchQueueIndex={patchQueueIndex}
+        visualDwell={visualDwell}
+        onVisualDwellChange={setVisualDwell}
+        patchDwell={patchDwell}
+        onPatchDwellChange={setPatchDwell}
+        onPlayShow={playShow}
+        onStopShow={stopShow}
+        onStepVisualQueue={stepVisualInQueue}
+        onStepPatchQueue={stepPatchInQueue}
+        nimeRef={nimePatchRef}
+      />
 
       {tuningMode ? (
         <>

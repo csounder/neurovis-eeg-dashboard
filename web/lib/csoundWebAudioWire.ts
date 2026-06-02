@@ -1,5 +1,5 @@
 import type { CsoundObj } from "@csound/browser";
-import { attachConcertWasmMeter } from "@/lib/concertAudioMeter";
+import { attachConcertRecordingTap, attachConcertWasmMeter } from "@/lib/concertAudioMeter";
 
 /**
  * Connect Csound's output for hearing + optional RMS tap.
@@ -13,6 +13,7 @@ function connectCsoundOutputGraph(
   concertMeter: boolean,
 ): void {
   node.connect(audioContext.destination);
+  attachConcertRecordingTap(node, audioContext);
   if (concertMeter) {
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = 512;

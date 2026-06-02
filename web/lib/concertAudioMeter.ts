@@ -12,6 +12,27 @@ let wasmPollId: number | undefined;
 let micPollId: number | undefined;
 let micStream: MediaStream | null = null;
 let micContext: AudioContext | null = null;
+let recordingDest: MediaStreamAudioDestinationNode | null = null;
+
+/** Parallel tap for performance recording (WASM / Csound output). */
+export function attachConcertRecordingTap(node: AudioNode, audioContext: AudioContext): void {
+  if (!recordingDest || recordingDest.context !== audioContext) {
+    recordingDest = audioContext.createMediaStreamDestination();
+  }
+  try {
+    node.connect(recordingDest);
+  } catch {
+    /* already connected */
+  }
+}
+
+export function getConcertRecordingAudioStream(): MediaStream | null {
+  return recordingDest?.stream ?? null;
+}
+
+export function clearConcertRecordingTap(): void {
+  recordingDest = null;
+}
 
 export function getConcertAudioReactiveMode(): ConcertAudioReactiveMode {
   return reactiveMode;

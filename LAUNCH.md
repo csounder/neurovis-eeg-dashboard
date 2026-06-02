@@ -99,7 +99,7 @@ Common targets:
 | --- | --- |
 | Dashboard home | `/` |
 | Teaching mode | `/teaching` |
-| Concert mode (53 visualizers, NIME Csound, WebGL) | `/concert` — see [docs/CONCERT-MODE.md](docs/CONCERT-MODE.md) |
+| Concert mode (53 visualizers, NIME Csound, WebGL, record + show queues) | `/concert` — see [docs/CONCERT-MODE.md](docs/CONCERT-MODE.md) |
 | Research mode (AI · Gemini lives here) | `/research` |
 | Settings | `/settings` |
 | Simulator | `/simulator` |

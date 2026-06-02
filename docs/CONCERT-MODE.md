@@ -10,11 +10,16 @@ Launch NeuroVis, open <http://localhost:3001/concert>, connect a Muse or start t
 
 | Layer | Role |
 | --- | --- |
-| **`web/app/concert/page.tsx`** | Stage layout, keyboard shortcuts, scene picker groups, NIME panel, presets, WASM V12 card |
+| **`web/app/concert/page.tsx`** | Stage layout, keyboard shortcuts, show queues, scene picker, NIME panel, recording, presets, WASM V12 |
 | **`ConcertVisualizer`** | 2D canvas scenes (classic, pulse, neural art) |
 | **`ConcertVisualizerWebGL`** | Fullscreen GLSL shaders + transform-feedback particle lace/macro |
+| **`ConcertPerformanceRecorderPanel`** | UI for movie / audio-only capture |
+| **`ConcertGroupPanel`** | Visual + patch queues, save/load concert groups, Play show |
 | **`server-enhanced.js`** | Headless Csound, CsoundQt launch, OSC to patches, patch library from `csound-patches.js` |
 | **`web/lib/concertVisualTuning.ts`** | Shared tuning sliders (EEG, GL, motion) |
+| **`web/lib/concert/concertGroup.ts`** | Concert group JSON + `localStorage` persistence |
+| **`web/lib/concert/concertPerformanceRecorder.ts`** | `MediaRecorder` capture (canvas + mixed audio) |
+| **`web/lib/concertAudioMeter.ts`** | WASM RMS meter + **recording tap** (`getConcertRecordingAudioStream`) |
 | **`web/lib/performancePreset.ts`** | Export/import concert + V12 performance presets (JSON) |
 
 EEG flows: WebSocket → Zustand (`latestBandsAbs`, `latestBandTraces`, `rollingRaw`) → visualizers. Audio drive: mic / WASM meter / blend per **Audio + EEG drive** controls.
@@ -67,10 +72,10 @@ Ignored when focus is in an `<input>` or `<select>`.
 
 | Key | Action |
 | --- | --- |
-| **↑** | Previous visualizer |
-| **↓** | Next visualizer |
-| **←** | Previous NIME patch (dropdown) + **Start patch** (headless) |
-| **→** | Next NIME patch + **Start patch** (headless) |
+| **↑** | Previous visualizer (full library, or visual queue during **Play show**) |
+| **↓** | Next visualizer (same) |
+| **←** | Previous NIME patch + launch (full library, or patch queue during **Play show**) |
+| **→** | Next NIME patch + launch (same) |
 | **F** | Stage fullscreen |
 | **H** | Toggle scene title HUD |
 | **C** | Toggle control panels |
@@ -125,6 +130,58 @@ Environment: `NEUROVIS_CSOUND_MIDI_DEVICE` for MIDI port index; `NEUROVIS_V12_CS
 
 ---
 
+## Performance recording
+
+**Performance recording** panel on the concert page captures to disk via the browser `MediaRecorder` API (typically **WebM**).
+
+| Control | Action |
+| --- | --- |
+| **Record movie** | Stage `<canvas>` at 30 fps + selected audio tracks |
+| **Record audio only** | Mixed audio only (no video) |
+| **Stop & download** | Ends capture and saves a file (browser download folder) |
+
+Audio sources (checkboxes):
+
+- **Microphone** — `getUserMedia` input  
+- **Browser WASM Csound** — tap on the WASM output node (`web/lib/concertAudioMeter.ts`)  
+- **Tab audio (headless)** — `getDisplayMedia` with audio; pick the NeuroVis tab when prompted. Required for headless NIME Csound, which is not in the browser audio graph.
+
+Implementation: `web/lib/concert/concertPerformanceRecorder.ts`, UI: `ConcertPerformanceRecorderPanel.tsx`.
+
+---
+
+## Concert groups (show queue)
+
+Build ordered **visualizer** and **NIME patch** lists, save as a named **concert group**, then **Play show** to step through the set.
+
+| Feature | Details |
+| --- | --- |
+| Queues | **Add current scene** / **Add current patch**; reorder or remove rows |
+| Auto-advance | Set dwell seconds (&gt; 0) per queue; timers run only while **Play show** is active |
+| Save / load | `localStorage` key `neurovis.concertGroups.v1`; export/import `.concert-group.json` |
+| Keyboard | During show: ↑↓ = visual queue, ←→ = patch queue. Random scene rotation is disabled while show is on |
+
+Format: `neurovis-concert-group` v1 — `web/lib/concert/concertGroup.ts`, UI: `ConcertGroupPanel.tsx`.
+
+Example export (abbreviated):
+
+```json
+{
+  "format": "neurovis-concert-group",
+  "version": 1,
+  "id": "…",
+  "name": "Opening set",
+  "visualQueue": ["auroraBrain", "glTfNeuroLace", "synapticStorm"],
+  "patchQueue": ["MuseV12-EEG-Control-Matrix-Cursor", "MuseV5_Jazz_Enhanced_Intelligent"],
+  "visualDwellSeconds": 90,
+  "patchDwellSeconds": 120
+}
+```
+
+Invalid scene ids are dropped on import; patch ids are kept as strings (must exist in the NIME library when played).
+
+---
+
 ## Performance presets
 
 **Share performance preset** exports JSON (`neurovis-performance-preset` v1): concert scene, tuning, trails, HUD flags, scene rotation, V12 WASM controls, optional research band-edge preset.
@@ -157,7 +214,9 @@ cd web && npx tsc --noEmit
 Key modules:
 
 - `web/lib/concert/concertSceneNav.ts` — scene order for arrow keys  
-- `web/components/concert/ConcertNimePatchPanel.tsx` — patch UI + `stepPatch` ref API  
+- `web/lib/concert/concertGroup.ts` — saved show queues  
+- `web/lib/concert/concertPerformanceRecorder.ts` — movie / audio capture  
+- `web/components/concert/ConcertNimePatchPanel.tsx` — patch UI + `stepPatch` / `launchPatchId` ref API  
 - `web/lib/concert/webgl/concertWebglScenes.ts` — fullscreen fragment shaders  
 - `web/lib/concert/webgl/concertWebglTransformFeedback.ts` — TF simulation + lace mask (no center “egg”)  
 

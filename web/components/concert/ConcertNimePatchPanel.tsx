@@ -26,6 +26,12 @@ type PatchLibraries = {
 export type ConcertNimePatchPanelHandle = {
   /** Step patch (−1 prev, +1 next) and launch headless Csound for the new selection. */
   stepPatch: (delta: -1 | 1) => void;
+  /** Step within an ordered queue; launches headless Csound for the new id. */
+  stepPatchQueue: (delta: -1 | 1, queue: string[]) => void;
+  launchPatchId: (id: string) => Promise<void>;
+  getSelectedId: () => string;
+  setSelectedId: (id: string) => void;
+  getPatchList: () => NimePatch[];
 };
 
 export const ConcertNimePatchPanel = React.forwardRef<
@@ -101,13 +107,14 @@ export const ConcertNimePatchPanel = React.forwardRef<
     [refresh],
   );
 
-  const stepPatch = React.useCallback(
-    (delta: -1 | 1) => {
-      if (patches.length === 0 || stepInFlight.current) return;
-      const idx = patches.findIndex((p) => p.id === selectedId);
-      const from = idx >= 0 ? idx : 0;
-      const next = (from + delta + patches.length) % patches.length;
-      const nextId = patches[next]?.id ?? "";
+  const stepToPatchId = React.useCallback(
+    (delta: -1 | 1, ids: string[]) => {
+      if (ids.length === 0 || stepInFlight.current) return;
+      const pool = ids.filter((id) => patches.some((p) => p.id === id));
+      if (pool.length === 0) return;
+      const cur = pool.indexOf(selectedId);
+      const from = cur >= 0 ? cur : 0;
+      const nextId = pool[(from + delta + pool.length) % pool.length] ?? "";
       if (!nextId) return;
       setSelectedId(nextId);
       stepInFlight.current = true;
@@ -118,7 +125,31 @@ export const ConcertNimePatchPanel = React.forwardRef<
     [patches, selectedId, launchPatch],
   );
 
-  React.useImperativeHandle(ref, () => ({ stepPatch }), [stepPatch]);
+  const stepPatch = React.useCallback(
+    (delta: -1 | 1) => {
+      if (patches.length === 0) return;
+      stepToPatchId(delta, patches.map((p) => p.id));
+    },
+    [patches, stepToPatchId],
+  );
+
+  const stepPatchQueue = React.useCallback(
+    (delta: -1 | 1, queue: string[]) => stepToPatchId(delta, queue),
+    [stepToPatchId],
+  );
+
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      stepPatch,
+      stepPatchQueue,
+      launchPatchId: (id: string) => launchPatch(id, "headless"),
+      getSelectedId: () => selectedId,
+      setSelectedId,
+      getPatchList: () => patches,
+    }),
+    [stepPatch, stepPatchQueue, launchPatch, selectedId, patches],
+  );
 
   function launch(mode: "headless" | "csoundqt") {
     void launchPatch(selectedId, mode);

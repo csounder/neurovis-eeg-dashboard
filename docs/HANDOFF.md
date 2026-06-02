@@ -48,7 +48,12 @@ This document summarizes the React/Next.js migration and related work, and inclu
 
 ## Concert mode (2026-06)
 
-Full performance UI at **`/concert`**: 53 scenes (2D + WebGL TF lace/macro), tuning HUD (EEG + GL + motion), NIME headless/CsoundQt patches, keyboard **↑↓** scenes / **←→** patch+launch, performance presets. Canonical doc: **[docs/CONCERT-MODE.md](./CONCERT-MODE.md)**. Legacy `public/` HTML visualizers removed; Next.js + `server-enhanced.js` only.
+Full performance UI at **`/concert`**: 53 scenes (2D + WebGL TF lace/macro), tuning HUD (EEG + GL + motion), NIME headless/CsoundQt patches, keyboard **↑↓** scenes / **←→** patch+launch, **performance recording** (WebM movie or audio-only), **concert groups** (ordered visual + patch queues, Play show, dwell auto-advance, JSON export), performance presets. Canonical doc: **[docs/CONCERT-MODE.md](./CONCERT-MODE.md)**. Legacy `public/` HTML visualizers removed; Next.js + `server-enhanced.js` only.
+
+| Feature | Key paths |
+| --- | --- |
+| Recording | `web/lib/concert/concertPerformanceRecorder.ts`, `ConcertPerformanceRecorderPanel.tsx`, tap in `concertAudioMeter.ts` |
+| Show queues | `web/lib/concert/concertGroup.ts`, `ConcertGroupPanel.tsx`, wired in `web/app/concert/page.tsx` |
 
 ---
 
@@ -171,4 +176,4 @@ My next task: [describe your task here]
 
 ---
 
-*Last updated: 2026-04-26 — BLE backends; concert AR modes (⌥1–⌥0), concertAudioMeter + simulator blend; HANDOFF session checkpoint + continuation prompt.*
+*Last updated: 2026-06-01 — Concert recording + concert groups; see CONCERT-MODE.md. Earlier: 2026-04-26 BLE backends; concert AR modes (⌥1–⌥0), concertAudioMeter + simulator blend.*

@@ -8,7 +8,10 @@ These `.csd` files are your **Mind Monitor–format** instruments (`OSCinit 7400
 2. Open **Concert** → **NIME Concert Patches**.
 3. **Open in CsoundQt** (recommended — same as your working external workflow, USB MIDI + keyboard).
 4. Or **Start patch** — NeuroVis runs Csound with `-+rtmidi=portmidi` and `-+rtaudio=CoreAudio` so USB MIDI reaches `massign` (e.g. V12: MIDI ch 1 → instr 5 chords).
-5. Play note groups on your Launchkey; use **⌥1–⌥0** for visuals (EEG-driven when patch is running).
+5. Play note groups on your Launchkey; use **↑↓** / **←→** on the concert page to step visuals and patches (or build a **concert group** queue and **Play show**).
+6. **Record movie** or **Record audio only** on the concert page to capture the performance (enable **Tab audio** if using headless Csound).
+
+See **[docs/CONCERT-MODE.md](../docs/CONCERT-MODE.md)** for recording sources, concert group JSON, and keyboard behavior during **Play show**.
 
 **Not wired:** “Enable USB MIDI” under the browser V12 block only feeds **in-browser WASM** Csound, not the headless `.csd` launched from the server.
 

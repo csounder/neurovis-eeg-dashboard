@@ -194,7 +194,9 @@ If **Amy** sends Mind Monitor OSC to **your** Mac while **you** also use **direc
 
 ## 6. Play — Concert, Csound, OSC
 
-- **Concert** route: full-screen visuals + **V12** browser Csound panel.
+- **Concert** route: full-screen visuals + **V12** browser Csound panel + **NIME** headless patches.
+- **Record performance:** **Record movie** (stage + audio) or **Record audio only**; for headless NIME, enable **Tab audio** and share the NeuroVis tab when prompted — see **`docs/CONCERT-MODE.md`** (Performance recording).
+- **Concert group:** queue ordered visuals and `.csd` patches → **Save group** / **Play show** (optional dwell auto-advance); export `.concert-group.json` to share a set list.
 - **OSC output** (to Csound, Max, etc.): host **127.0.0.1**, port **7400**, prefix **`/muse`** by default — enable streams in settings as needed.
 - **Share a mapping** with Amy: on **Concert**, use **Share performance preset** → download JSON; she **Imports** on her Mac (see **`docs/CONCERT-SONIFICATION-DUAL-SOURCE.md`** §10).
 
