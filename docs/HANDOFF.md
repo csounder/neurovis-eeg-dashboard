@@ -84,6 +84,9 @@ Full performance UI at **`/concert`**: 53 scenes (2D + WebGL TF lace/macro), tun
 | Area | Path |
 |------|------|
 | App routes | `web/app/**/page.tsx` |
+| Concert page | `web/app/concert/page.tsx` |
+| Concert recording | `web/lib/concert/concertPerformanceRecorder.ts`, `ConcertPerformanceRecorderPanel.tsx` |
+| Concert groups | `web/lib/concert/concertGroup.ts`, `ConcertGroupPanel.tsx` |
 | Global state | `web/lib/store.ts` |
 | WebSocket | `web/lib/useWebSocket.ts` |
 | Browser sim | `web/lib/simulator.ts`, `web/lib/clientSim.ts` |
@@ -107,6 +110,8 @@ Full performance UI at **`/concert`**: 53 scenes (2D + WebGL TF lace/macro), tun
 
 | Doc | Contents |
 |-----|----------|
+| [README.md](./README.md) | **Documentation index** (all guides + concert feature summary) |
+| [CONCERT-MODE.md](./CONCERT-MODE.md) | **Concert performance:** visualizers, WebGL, NIME patches, recording, concert groups, keyboard |
 | [QUICKSTART-LAUNCH-PAIR-PLAY.md](./QUICKSTART-LAUNCH-PAIR-PLAY.md) | **Launch → pair → play:** two terminals (`server-enhanced.js` + `web` dev), **Muse S Athena** direct BLE, **Mind Monitor** OSC to port **5000**, ports checklist, copy-paste checklist for a second laptop |
 | [RESEARCH-CAPTURE-AND-SYNC.md](./RESEARCH-CAPTURE-AND-SYNC.md) | Research routes, capture modes (browser recorder, disk session, rolling export, stimulus), clocks/markers, `bandEdgePreset`, PPG/store notes, file index |
 | [RESEARCH-EEG-AND-BASELINE-PATHS.md](./RESEARCH-EEG-AND-BASELINE-PATHS.md) | Browser trace source vs server band powers, DSP, conditioning lab |

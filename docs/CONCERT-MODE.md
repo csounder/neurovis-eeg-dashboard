@@ -4,6 +4,21 @@ Concert mode is the full-screen performance UI at **`/concert`**. It combines li
 
 Launch NeuroVis, open <http://localhost:3001/concert>, connect a Muse or start the simulator, then pick a scene and tune sliders in **Tuning mode** or the on-stage **Tuning HUD** (`U`).
 
+More docs: [docs/README.md](./README.md) (index) · [HANDOFF.md](./HANDOFF.md) · [LAUNCH.md](../LAUNCH.md)
+
+---
+
+## Quick workflow (performance night)
+
+1. **Launch** — `Launch NeuroVis.command` or `npm start` + `cd web && npm run dev` → open `/concert`.
+2. **EEG** — Connect Muse (or simulator); confirm band traces move on stage.
+3. **Sound** — **Start patch** (NIME headless) and/or start **WASM V12** on the concert page; enable OSC if the patch expects `/muse/elements/*`.
+4. **Optional set list** — In **Concert group**, **Add current scene** / **Add current patch** for each movement → **Save group** → **Play show** (set dwell seconds for auto-advance).
+5. **Record** — **Record movie** for visuals + audio, or **Record audio only**. For headless Csound, check **Tab audio** and select this browser tab when prompted.
+6. **Stop** — **Stop & download** (recording), **Stop show** (queues), **Stop patch** (NIME panel).
+
+**Share with another machine:** performance preset JSON (single snapshot) or `.concert-group.json` (ordered show). See [CONCERT-SONIFICATION-DUAL-SOURCE.md](./CONCERT-SONIFICATION-DUAL-SOURCE.md) for two-performer setups.
+
 ---
 
 ## Architecture

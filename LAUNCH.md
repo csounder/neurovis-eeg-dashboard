@@ -186,3 +186,13 @@ This kills every listener on ports 3000, 3001, and 8080 (kill, then kill -9 if n
 | Next.js frontend | `next dev -p 3001` | `npm run dev` (`web/package.json`) |
 
 The launcher is just a friendly wrapper — everything it does is the same as running those `npm` commands by hand in two terminals.
+
+---
+
+## Documentation
+
+| Topic | Doc |
+| --- | --- |
+| All guides (index) | [docs/README.md](docs/README.md) |
+| Concert performance (record, show queues) | [docs/CONCERT-MODE.md](docs/CONCERT-MODE.md) |
+| Handoff / architecture | [docs/HANDOFF.md](docs/HANDOFF.md) |

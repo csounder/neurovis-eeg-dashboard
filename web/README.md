@@ -71,6 +71,20 @@ NEXT_PUBLIC_NEUROVIS_WS_URL=ws://localhost:8080    # backend WebSocket URL
 | `/osc`           | OSC host / port / rate / streams / receiver snippets |
 | `/stats`         | Pipeline health, latency, raw payload                |
 | `/settings`      | Device list, simulator toggle, backend info         |
+| `/concert`       | **Concert mode** — full-screen EEG/WebGL visuals, NIME headless Csound, WASM V12, **performance recording**, **concert group** show queues ([docs/CONCERT-MODE.md](../docs/CONCERT-MODE.md)) |
+| `/v12`–`/v17`    | Browser WASM Csound workstation presets             |
+| `/teaching`      | Teaching / guided sonification UI                   |
+| `/recordings`    | Server disk session recording control               |
+
+## Concert mode (`/concert`)
+
+Performance UI documented in **[docs/CONCERT-MODE.md](../docs/CONCERT-MODE.md)**.
+
+- **Record movie** / **Record audio only** — browser `MediaRecorder`; mixed mic, WASM Csound tap, optional tab audio for headless patches.
+- **Concert group** — build ordered visualizer + NIME patch lists, **Play show**, optional dwell timers; save in `localStorage` or export `.concert-group.json`.
+- **Keyboard:** ↑↓ visuals, ←→ patches (+ launch headless); during **Play show**, arrows step within queues only.
+
+Key files: `app/concert/page.tsx`, `components/concert/*`, `lib/concert/concertGroup.ts`, `lib/concert/concertPerformanceRecorder.ts`.
 
 ## Project layout
 
@@ -79,6 +93,7 @@ web/
 ├── app/                    # Next.js App Router pages
 │   ├── layout.tsx          # root layout (fonts + shell)
 │   ├── page.tsx            # overview
+│   ├── concert/            # performance stage + recording + show queues
 │   ├── raw/, bands/, …     # tabs
 │   └── globals.css         # tailwind + app styles
 ├── components/
